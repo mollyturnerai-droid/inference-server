@@ -20,12 +20,12 @@ done
 
 # Initialize database (create tables)
 echo "Initializing database..."
-python -c "from app.db import engine, Base; Base.metadata.create_all(bind=engine); print('Database initialized')"
+python3.11 -c "from app.db import engine, Base; Base.metadata.create_all(bind=engine); print('Database initialized')"
 
 # Start Celery worker in the background
 echo "Starting Celery worker..."
-celery -A app.workers.celery_app worker --loglevel=info --concurrency=${WORKER_CONCURRENCY:-2} &
+python3.11 -m celery -A app.workers.celery_app worker --loglevel=info --concurrency=${WORKER_CONCURRENCY:-2} &
 
 # Start the FastAPI server
 echo "Starting FastAPI server..."
-exec uvicorn app.main:app --host ${API_HOST:-0.0.0.0} --port ${PORT:-8000} --workers ${WORKERS:-1}
+exec python3.11 -m uvicorn app.main:app --host ${API_HOST:-0.0.0.0} --port ${PORT:-8000} --workers ${WORKERS:-1}

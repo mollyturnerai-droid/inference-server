@@ -15,17 +15,18 @@ RUN apt-get update && apt-get install -y \
     redis-server \
     && rm -rf /var/lib/apt/lists/*
 
-# Create symlink for python
-RUN ln -s /usr/bin/python3.11 /usr/bin/python
+# Create symlinks for python and pip
+RUN ln -s /usr/bin/python3.11 /usr/bin/python && \
+    ln -s /usr/bin/pip3 /usr/bin/pip
 
-# Upgrade pip
-RUN pip install --no-cache-dir --upgrade pip
+# Upgrade pip for Python 3.11
+RUN python3.11 -m pip install --no-cache-dir --upgrade pip
 
 # Copy requirements
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies with Python 3.11
+RUN python3.11 -m pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
@@ -33,8 +34,7 @@ COPY . .
 # Create necessary directories
 RUN mkdir -p /tmp/inference_storage /tmp/model_cache logs
 
-# Copy and make startup script executable
-COPY start-all.sh /app/start-all.sh
+# Make startup script executable
 RUN chmod +x /app/start-all.sh
 
 # Expose port
