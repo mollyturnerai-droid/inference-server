@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     REDIS_PASSWORD: Optional[str] = None
 
     # Database
-    DATABASE_URL: str = "postgresql://user:password@localhost:5432/inference_db"
+    DATABASE_URL: str = "sqlite:///./inference.db"
 
     # Authentication
     SECRET_KEY: str = "your-secret-key-change-this"
@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
     WORKER_CONCURRENCY: int = 2
+
+    # Single Container Mode
+    SINGLE_CONTAINER: bool = True  # Run all services in one container
 
     # Inference Configuration
     DEFAULT_TIMEOUT: int = 300
