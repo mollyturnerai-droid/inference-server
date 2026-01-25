@@ -4,7 +4,7 @@ from typing import Optional
 from app.db import get_db, Prediction, Model, User
 from app.schemas import PredictionInput, PredictionResponse, PredictionList, PredictionStatus
 from app.workers.tasks import run_inference
-from app.services.auth import get_current_user
+from app.services.auth import get_current_user, get_current_user_optional
 
 router = APIRouter(prefix="/predictions", tags=["Predictions"])
 
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/predictions", tags=["Predictions"])
 async def create_prediction(
     prediction: PredictionInput,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """Create a new prediction"""
     # Verify model exists
@@ -66,7 +66,7 @@ async def list_predictions(
     limit: int = 100,
     status: Optional[PredictionStatus] = None,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """List predictions"""
     query = db.query(Prediction)
@@ -86,7 +86,7 @@ async def list_predictions(
 async def cancel_prediction(
     prediction_id: str,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """Cancel a prediction"""
     prediction = db.query(Prediction).filter(Prediction.id == prediction_id).first()

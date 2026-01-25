@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.db import get_db, Model, User
 from app.schemas import ModelCreate, ModelResponse, ModelList
-from app.services.auth import get_current_user
+from app.services.auth import get_current_user, get_current_user_optional
 
 router = APIRouter(prefix="/models", tags=["Models"])
 
@@ -12,7 +12,7 @@ router = APIRouter(prefix="/models", tags=["Models"])
 async def create_model(
     model: ModelCreate,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """Create a new model"""
     db_model = Model(
@@ -58,7 +58,7 @@ async def get_model(model_id: str, db: Session = Depends(get_db)):
 async def delete_model(
     model_id: str,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """Delete a model"""
     model = db.query(Model).filter(Model.id == model_id).first()
