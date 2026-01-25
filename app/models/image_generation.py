@@ -3,8 +3,9 @@ import torch
 from diffusers import StableDiffusionPipeline
 from .base_model import BaseInferenceModel
 import io
-import base64
+import uuid
 from PIL import Image
+from app.services.storage import storage_service
 
 
 class ImageGenerationModel(BaseInferenceModel):
@@ -43,13 +44,20 @@ class ImageGenerationModel(BaseInferenceModel):
             generator=generator
         ).images[0]
 
-        # Convert image to base64
+        # Save image to storage and return URL
+        image_id = str(uuid.uuid4())
+        filename = f"images/{image_id}.png"
+
         buffered = io.BytesIO()
         image.save(buffered, format="PNG")
-        img_str = base64.b64encode(buffered.getvalue()).decode()
+        image_bytes = buffered.getvalue()
+
+        storage_service.save_file_sync(filename, image_bytes, content_type="image/png")
+        image_url = storage_service.get_public_url(filename)
 
         return {
-            "image": f"data:image/png;base64,{img_str}",
+            "image_url": image_url,
+            "image_id": image_id,
             "prompt": prompt,
             "width": width,
             "height": height

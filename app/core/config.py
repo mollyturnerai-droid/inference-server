@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
     S3_BUCKET: Optional[str] = None
+    S3_REGION: str = "us-east-1"
+    S3_PRESIGNED_EXPIRY: int = 3600  # Seconds for presigned URL validity
+
+    # API URL for generating file URLs
+    API_BASE_URL: str = "http://localhost:8000"
 
     # Model Configuration
     MODEL_CACHE_DIR: str = "/tmp/model_cache"
