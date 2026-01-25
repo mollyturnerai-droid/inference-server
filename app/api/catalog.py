@@ -12,7 +12,7 @@ from app.services.catalog import (
     get_catalog_model_by_id,
     get_catalog_categories,
 )
-from app.db.session import get_db
+from app.db import get_db
 from app.db.models import Model
 from app.schemas.model import ModelType
 
