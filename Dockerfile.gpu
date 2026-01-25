@@ -15,9 +15,9 @@ RUN apt-get update && apt-get install -y \
     redis-server \
     && rm -rf /var/lib/apt/lists/*
 
-# Create symlinks for python and pip
-RUN ln -s /usr/bin/python3.11 /usr/bin/python && \
-    ln -s /usr/bin/pip3 /usr/bin/pip
+# Create symlinks for python and pip (force overwrite if exists)
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python && \
+    ln -sf /usr/bin/pip3 /usr/bin/pip
 
 # Upgrade pip for Python 3.11
 RUN python3.11 -m pip install --no-cache-dir --upgrade pip
