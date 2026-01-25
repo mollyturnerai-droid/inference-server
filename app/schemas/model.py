@@ -10,6 +10,10 @@ class ModelType(str, Enum):
     IMAGE_TO_TEXT = "image-to-text"
     TEXT_TO_IMAGE = "text-to-image"
     CLASSIFICATION = "classification"
+    EMBEDDINGS = "embeddings"
+    SPEECH_TO_TEXT = "speech-to-text"
+    SUMMARIZATION = "summarization"
+    TRANSLATION = "translation"
     CUSTOM = "custom"
 
 
