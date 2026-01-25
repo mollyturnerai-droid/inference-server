@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -52,6 +53,323 @@ async def root():
 async def health():
     """Basic health check - API is running"""
     return {"status": "healthy"}
+
+
+@app.get("/playground", response_class=HTMLResponse)
+async def playground():
+    return """<!doctype html>
+<html lang=\"en\">
+  <head>
+    <meta charset=\"utf-8\" />
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+    <title>Inference Server Playground</title>
+    <style>
+      :root { color-scheme: light; }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; background: #f6f7f9; color: #111; }
+      header { padding: 16px 20px; background: #fff; border-bottom: 1px solid #e5e7eb; }
+      header h1 { font-size: 18px; margin: 0; }
+      main { max-width: 1100px; margin: 0 auto; padding: 20px; display: grid; gap: 16px; grid-template-columns: 420px 1fr; }
+      .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; }
+      .card h2 { font-size: 14px; margin: 0 0 10px; }
+      label { display: block; font-size: 12px; color: #374151; margin: 10px 0 6px; }
+      select, input, textarea { width: 100%; box-sizing: border-box; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; font-size: 14px; }
+      textarea { min-height: 120px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace; }
+      .row { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+      .actions { display: flex; gap: 10px; margin-top: 12px; }
+      button { border: 1px solid #d1d5db; background: #111827; color: #fff; border-radius: 8px; padding: 10px 12px; font-size: 14px; cursor: pointer; }
+      button.secondary { background: #fff; color: #111827; }
+      button:disabled { opacity: .5; cursor: not-allowed; }
+      .muted { color: #6b7280; font-size: 12px; }
+      .pill { display: inline-block; font-size: 12px; padding: 3px 8px; border-radius: 999px; border: 1px solid #e5e7eb; background: #f9fafb; }
+      pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12.5px; line-height: 1.35; }
+      .kv { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .error { color: #b91c1c; }
+      .ok { color: #047857; }
+      footer { padding: 16px 20px; color: #6b7280; font-size: 12px; }
+      @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Inference Server Playground</h1>
+      <div class=\"muted\">Select a model from the curated catalog, mount it, run a prediction, and view results.</div>
+    </header>
+    <main>
+      <section class=\"card\">
+        <h2>Model</h2>
+        <div class=\"row\">
+          <div>
+            <label for=\"category\">Category</label>
+            <select id=\"category\"></select>
+          </div>
+          <div>
+            <label for=\"hardware\">Hardware</label>
+            <select id=\"hardware\">
+              <option value=\"\">Any</option>
+              <option value=\"cpu\">CPU</option>
+              <option value=\"gpu\">GPU</option>
+            </select>
+          </div>
+        </div>
+
+        <label for=\"model\">Curated model</label>
+        <select id=\"model\"></select>
+
+        <div id=\"modelMeta\" class=\"muted\" style=\"margin-top:10px\"></div>
+
+        <label for=\"mountName\">Mount name (optional)</label>
+        <input id=\"mountName\" placeholder=\"e.g. qwen3-playground\" />
+        <div class=\"actions\">
+          <button id=\"btnMount\">Mount model</button>
+          <button id=\"btnRefresh\" class=\"secondary\">Refresh catalog</button>
+        </div>
+        <div id=\"mountStatus\" class=\"muted\" style=\"margin-top:10px\"></div>
+      </section>
+
+      <section class=\"card\">
+        <h2>Run</h2>
+        <div class=\"kv\">
+          <span class=\"pill\">POST /v1/predictions</span>
+          <span id=\"pillModelId\" class=\"pill\">model_id: (not mounted)</span>
+          <span id=\"pillStatus\" class=\"pill\">status: idle</span>
+        </div>
+
+        <label for=\"inputJson\">Input JSON</label>
+        <textarea id=\"inputJson\">{\n  \"prompt\": \"Hello world\"\n}</textarea>
+        <div class=\"actions\">
+          <button id=\"btnRun\" disabled>Run prediction</button>
+          <button id=\"btnCancel\" class=\"secondary\" disabled>Cancel</button>
+        </div>
+
+        <label>Response</label>
+        <div class=\"card\" style=\"background:#0b1020; color:#e5e7eb; border-color:#0b1020;\">
+          <pre id=\"out\">(no output yet)</pre>
+        </div>
+        <div id=\"hint\" class=\"muted\" style=\"margin-top:10px\"></div>
+      </section>
+    </main>
+    <footer>
+      Tip: If predictions stay in \"starting\" or \"processing\", ensure Redis + Celery worker are running.
+    </footer>
+
+    <script>
+      const SUPPORTED_TYPES = new Set([\"text-generation\", \"image-generation\", \"text-to-image\"]);
+
+      const el = (id) => document.getElementById(id);
+
+      let catalog = null;
+      let mountedModelId = null;
+      let lastPredictionId = null;
+      let pollTimer = null;
+
+      function setStatus(text, kind) {
+        el('pillStatus').textContent = `status: ${text}`;
+        el('pillStatus').className = `pill ${kind || ''}`.trim();
+      }
+
+      function setOut(obj) {
+        if (typeof obj === 'string') {
+          el('out').textContent = obj;
+          return;
+        }
+        el('out').textContent = JSON.stringify(obj, null, 2);
+      }
+
+      async function api(path, options) {
+        const res = await fetch(path, {
+          headers: { 'Content-Type': 'application/json' },
+          ...options,
+        });
+        const text = await res.text();
+        let data = null;
+        try { data = text ? JSON.parse(text) : null; } catch (_) { data = text; }
+        if (!res.ok) {
+          const msg = (data && data.detail) ? data.detail : (typeof data === 'string' ? data : `HTTP ${res.status}`);
+          throw new Error(msg);
+        }
+        return data;
+      }
+
+      function getFilteredModels() {
+        if (!catalog) return [];
+        const category = el('category').value;
+        const hw = el('hardware').value;
+        let models = catalog.models || [];
+        if (category && category !== '__all__') models = models.filter(m => m.model_type === category);
+        if (hw) models = models.filter(m => m.recommended_hardware === hw);
+        models = models.filter(m => SUPPORTED_TYPES.has(m.model_type));
+        return models;
+      }
+
+      function renderModelSelect() {
+        const models = getFilteredModels();
+        el('model').innerHTML = '';
+
+        if (models.length === 0) {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = 'No supported models match filters';
+          el('model').appendChild(opt);
+          el('modelMeta').innerHTML = '<span class="error">No supported models available for current filters.</span>';
+          return;
+        }
+
+        for (const m of models) {
+          const opt = document.createElement('option');
+          opt.value = m.id;
+          opt.textContent = `${m.name} (${m.id})`;
+          el('model').appendChild(opt);
+        }
+        renderModelMeta();
+      }
+
+      function renderModelMeta() {
+        const models = getFilteredModels();
+        const id = el('model').value;
+        const m = models.find(x => x.id === id);
+        if (!m) {
+          el('modelMeta').textContent = '';
+          return;
+        }
+        const parts = [];
+        parts.push(`<div><strong>${m.name}</strong></div>`);
+        parts.push(`<div class="muted">${m.description || ''}</div>`);
+        parts.push(`<div class="kv" style="margin-top:8px">` +
+          `<span class="pill">type: ${m.model_type}</span>` +
+          `<span class="pill">hw: ${m.recommended_hardware}</span>` +
+          (m.vram_gb ? `<span class="pill">vram: ${m.vram_gb}GB</span>` : '') +
+          `<span class="pill">size: ${m.size}</span>` +
+        `</div>`);
+        parts.push(`<div class="muted" style="margin-top:6px">path: <code>${m.model_path}</code></div>`);
+        el('modelMeta').innerHTML = parts.join('');
+
+        // Set a helpful default input template
+        if (m.model_type === 'text-generation') {
+          el('inputJson').value = '{\n  "prompt": "Write a short paragraph about koalas."\n}';
+        } else {
+          el('inputJson').value = '{\n  "prompt": "A cinematic photo of a lighthouse on a stormy sea"\n}';
+        }
+      }
+
+      async function loadCatalog() {
+        setStatus('loading catalog...', '');
+        el('mountStatus').textContent = '';
+        try {
+          catalog = await api('/v1/catalog/models');
+
+          const categories = ['__all__', ...(catalog.categories || [])];
+          el('category').innerHTML = '';
+          for (const c of categories) {
+            const opt = document.createElement('option');
+            opt.value = c;
+            opt.textContent = (c === '__all__') ? 'All categories' : c;
+            el('category').appendChild(opt);
+          }
+          el('category').value = '__all__';
+          renderModelSelect();
+
+          setStatus('idle', '');
+          el('hint').innerHTML = 'Supported in this build: <code>text-generation</code>, <code>text-to-image</code>.';
+        } catch (e) {
+          setStatus('error', 'error');
+          el('hint').innerHTML = `<span class="error">Failed to load catalog: ${e.message}</span>`;
+        }
+      }
+
+      async function mountSelected() {
+        const id = el('model').value;
+        if (!id) return;
+        el('btnMount').disabled = true;
+        el('mountStatus').textContent = 'Mounting...';
+        try {
+          const body = {
+            catalog_id: id,
+            name: el('mountName').value ? el('mountName').value : null,
+          };
+          const res = await api('/v1/catalog/mount', { method: 'POST', body: JSON.stringify(body) });
+          mountedModelId = res.model_id;
+          el('pillModelId').textContent = `model_id: ${mountedModelId}`;
+          el('mountStatus').innerHTML = `<span class="ok">${res.message}</span>`;
+          el('btnRun').disabled = false;
+          setOut(res);
+        } catch (e) {
+          el('mountStatus').innerHTML = `<span class="error">Mount failed: ${e.message}</span>`;
+          setOut({ error: e.message });
+        } finally {
+          el('btnMount').disabled = false;
+        }
+      }
+
+      async function runPrediction() {
+        if (!mountedModelId) return;
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        lastPredictionId = null;
+        el('btnRun').disabled = true;
+        el('btnCancel').disabled = true;
+        setStatus('submitting...', '');
+        try {
+          let input = null;
+          try { input = JSON.parse(el('inputJson').value); } catch (_) {
+            throw new Error('Input JSON is invalid');
+          }
+          const payload = { model_id: mountedModelId, input };
+          const res = await api('/v1/predictions/', { method: 'POST', body: JSON.stringify(payload) });
+          lastPredictionId = res.id;
+          setOut(res);
+          el('btnCancel').disabled = false;
+          await pollOnce();
+          pollTimer = setInterval(pollOnce, 1500);
+        } catch (e) {
+          setStatus('error', 'error');
+          setOut({ error: e.message });
+          el('btnRun').disabled = false;
+        }
+      }
+
+      async function pollOnce() {
+        if (!lastPredictionId) return;
+        try {
+          const res = await api(`/v1/predictions/${lastPredictionId}`);
+          setStatus(res.status, res.status === 'failed' ? 'error' : (res.status === 'succeeded' ? 'ok' : ''));
+          setOut(res);
+          if (['succeeded', 'failed', 'canceled'].includes(res.status)) {
+            if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+            el('btnRun').disabled = false;
+            el('btnCancel').disabled = true;
+          }
+        } catch (e) {
+          setStatus('error', 'error');
+          setOut({ error: e.message });
+          if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+          el('btnRun').disabled = false;
+          el('btnCancel').disabled = true;
+        }
+      }
+
+      async function cancelPrediction() {
+        if (!lastPredictionId) return;
+        el('btnCancel').disabled = true;
+        try {
+          const res = await api(`/v1/predictions/${lastPredictionId}/cancel`, { method: 'POST' });
+          setOut(res);
+          await pollOnce();
+        } catch (e) {
+          setOut({ error: e.message });
+        }
+      }
+
+      el('btnRefresh').addEventListener('click', loadCatalog);
+      el('btnMount').addEventListener('click', mountSelected);
+      el('btnRun').addEventListener('click', runPrediction);
+      el('btnCancel').addEventListener('click', cancelPrediction);
+      el('category').addEventListener('change', renderModelSelect);
+      el('hardware').addEventListener('change', renderModelSelect);
+      el('model').addEventListener('change', renderModelMeta);
+
+      loadCatalog();
+    </script>
+  </body>
+</html>"""
 
 
 @app.get("/health/detailed")
