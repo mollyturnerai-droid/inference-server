@@ -17,8 +17,64 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-cpu:
-    name: Build CPU Image
+  # Disabled CPU build - focus on GPU only
+  # build-cpu:
+  #   name: Build CPU Image
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: read
+  #     packages: write
+
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+
+  #     - name: Set up Docker Buildx
+  #       uses: docker/setup-buildx-action@v3
+
+  #     - name: Log in to GitHub Container Registry
+  #       uses: docker/login-action@v3
+  #       with:
+  #         registry: ${{ env.REGISTRY }}
+  #         username: ${{ github.actor }}
+  #         password: ${{ secrets.GITHUB_TOKEN }}
+
+  #     - name: Log in to Docker Hub
+  #       uses: docker/login-action@v3
+  #       with:
+  #         username: ${{ secrets.DOCKERHUB_USERNAME }}
+  #         password: ${{ secrets.DOCKERHUB_TOKEN }}
+  #       if: github.event_name != 'pull_request'
+
+  #     - name: Extract metadata
+  #       id: meta
+  #       uses: docker/metadata-action@v5
+  #       with:
+  #         images: |
+  #           ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+  #           ${{ secrets.DOCKERHUB_USERNAME }}/inference-server
+  #         tags: |
+  #           type=ref,event=branch
+  #           type=ref,event=pr
+  #           type=semver,pattern={{version}}
+  #           type=semver,pattern={{major}}.{{minor}}
+  #           type=sha,prefix={{branch}}-
+  #           type=raw,value=cpu,enable={{is_default_branch}}
+
+  #     - name: Build and push CPU image
+  #       uses: docker/build-push-action@v5
+  #       with:
+  #         context: .
+  #         file: ./Dockerfile
+  #         push: ${{ github.event_name != 'pull_request' }}
+  #         tags: ${{ steps.meta.outputs.tags }}
+  #         labels: ${{ steps.meta.outputs.labels }}
+  #         cache-from: type=gha
+  #         cache-to: type=gha,mode=max
+  #         platforms: linux/amd64,linux/arm64
+
+  build-gpu:
+    name: Build GPU Image
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -59,63 +115,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=cpu,enable={{is_default_branch}}
-
-      - name: Build and push CPU image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
-
-  build-gpu:
-    name: Build GPU Image
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-        if: github.event_name != 'pull_request'
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/inference-server
-          tags: |
-            type=ref,event=branch,suffix=-gpu
-            type=ref,event=pr,suffix=-gpu
-            type=semver,pattern={{version}},suffix=-gpu
-            type=semver,pattern={{major}}.{{minor}},suffix=-gpu
-            type=sha,prefix={{branch}}-,suffix=-gpu
             type=raw,value=gpu,enable={{is_default_branch}}
-            type=raw,value=latest-gpu,enable={{is_default_branch}}
 
       - name: Build and push GPU image
         uses: docker/build-push-action@v5
@@ -129,58 +129,58 @@ jobs:
           cache-to: type=gha,mode=max
           platforms: linux/amd64
 
-  build-worker:
-    name: Build Worker Image
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+  # Disabled Worker build - use GPU image for workers too
+  # build-worker:
+  #   name: Build Worker Image
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: read
+  #     packages: write
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+  #     - name: Set up Docker Buildx
+  #       uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+  #     - name: Log in to GitHub Container Registry
+  #       uses: docker/login-action@v3
+  #       with:
+  #         registry: ${{ env.REGISTRY }}
+  #         username: ${{ github.actor }}
+  #         password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-        if: github.event_name != 'pull_request'
+  #     - name: Log in to Docker Hub
+  #       uses: docker/login-action@v3
+  #       with:
+  #         username: ${{ secrets.DOCKERHUB_USERNAME }}
+  #         password: ${{ secrets.DOCKERHUB_TOKEN }}
+  #       if: github.event_name != 'pull_request'
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/inference-server
-          tags: |
-            type=ref,event=branch,suffix=-worker
-            type=ref,event=pr,suffix=-worker
-            type=semver,pattern={{version}},suffix=-worker
-            type=semver,pattern={{major}}.{{minor}},suffix=-worker
-            type=sha,prefix={{branch}}-,suffix=-worker
-            type=raw,value=worker,enable={{is_default_branch}}
-            type=raw,value=latest-worker,enable={{is_default_branch}}
+  #     - name: Extract metadata
+  #       id: meta
+  #       uses: docker/metadata-action@v5
+  #       with:
+  #         images: |
+  #           ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+  #           ${{ secrets.DOCKERHUB_USERNAME }}/inference-server
+  #         tags: |
+  #           type=ref,event=branch,suffix=-worker
+  #           type=ref,event=pr,suffix=-worker
+  #           type=semver,pattern={{version}},suffix=-worker
+  #           type=semver,pattern={{major}}.{{minor}},suffix=-worker
+  #           type=sha,prefix={{branch}}-,suffix=-worker
+  #           type=raw,value=worker,enable={{is_default_branch}}
 
-      - name: Build and push Worker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile.worker
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64
+  #     - name: Build and push Worker image
+  #       uses: docker/build-push-action@v5
+  #       with:
+  #         context: .
+  #         file: ./Dockerfile.worker
+  #         push: ${{ github.event_name != 'pull_request' }}
+  #         tags: ${{ steps.meta.outputs.tags }}
+  #         labels: ${{ steps.meta.outputs.labels }}
+  #         cache-from: type=gha
+  #         cache-to: type=gha,mode=max
+  #         platforms: linux/amd64
