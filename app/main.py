@@ -190,6 +190,14 @@ async def playground():
         return data;
       }
 
+      function deriveCategoriesFromModels(models) {
+        const set = new Set();
+        for (const m of (models || [])) {
+          if (m && m.model_type) set.add(m.model_type);
+        }
+        return Array.from(set).sort();
+      }
+
       function getFilteredModels() {
         if (!catalog) return [];
         const category = el('category').value;
@@ -257,7 +265,10 @@ async def playground():
         try {
           catalog = await api('/v1/catalog/models');
 
-          const categories = ['__all__', ...(catalog.categories || [])];
+          const rawCategories = (catalog && Array.isArray(catalog.categories) && catalog.categories.length > 0)
+            ? catalog.categories
+            : deriveCategoriesFromModels(catalog && catalog.models);
+          const categories = ['__all__', ...rawCategories];
           el('category').innerHTML = '';
           for (const c of categories) {
             const opt = document.createElement('option');
@@ -269,7 +280,11 @@ async def playground():
           renderModelSelect();
 
           setStatus('idle', '');
-          el('hint').innerHTML = 'Supported in this build: <code>text-generation</code>, <code>text-to-image</code>.';
+          if (!catalog || !Array.isArray(catalog.models)) {
+            el('hint').innerHTML = '<span class="error">Catalog response did not include a models list. Check server logs.</span>';
+          } else {
+            el('hint').innerHTML = 'Supported in this build: <code>text-generation</code>, <code>text-to-image</code>.';
+          }
         } catch (e) {
           setStatus('error', 'error');
           el('hint').innerHTML = `<span class="error">Failed to load catalog: ${e.message}</span>`;
