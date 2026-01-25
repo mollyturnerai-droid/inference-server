@@ -253,9 +253,13 @@ async def playground():
 
         // Set a helpful default input template
         if (m.model_type === 'text-generation') {
-          el('inputJson').value = '{\n  "prompt": "Write a short paragraph about koalas."\n}';
+          el('inputJson').value = `{
+  "prompt": "Write a short paragraph about koalas."
+}`;
         } else {
-          el('inputJson').value = '{\n  "prompt": "A cinematic photo of a lighthouse on a stormy sea"\n}';
+          el('inputJson').value = `{
+  "prompt": "A cinematic photo of a lighthouse on a stormy sea"
+}`;
         }
       }
 
