@@ -8,8 +8,12 @@ from app.api import api_router
 from app.db import engine, Base
 from app.core.config import settings
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
+# Create database tables (only if database is available)
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as e:
+    print(f"Warning: Could not create database tables: {e}")
+    print("Database will be initialized when connection is available")
 
 # Initialize rate limiter
 limiter = Limiter(key_func=get_remote_address)
