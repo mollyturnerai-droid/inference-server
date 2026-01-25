@@ -50,7 +50,64 @@ async def root():
 
 @app.get("/health")
 async def health():
+    """Basic health check - API is running"""
     return {"status": "healthy"}
+
+
+@app.get("/health/detailed")
+async def health_detailed():
+    """Detailed health check with service status"""
+    from app.db import engine
+    import redis
+
+    status = {
+        "api": "healthy",
+        "database": "unknown",
+        "redis": "unknown",
+        "gpu": "unknown"
+    }
+
+    # Check database
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        status["database"] = "healthy"
+    except Exception as e:
+        status["database"] = f"unavailable: {str(e)[:100]}"
+
+    # Check Redis
+    try:
+        r = redis.Redis(
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+            password=settings.REDIS_PASSWORD,
+            db=settings.REDIS_DB
+        )
+        r.ping()
+        status["redis"] = "healthy"
+    except Exception as e:
+        status["redis"] = f"unavailable: {str(e)[:100]}"
+
+    # Check GPU
+    try:
+        import torch
+        if torch.cuda.is_available():
+            gpu_count = torch.cuda.device_count()
+            gpu_name = torch.cuda.get_device_name(0) if gpu_count > 0 else "N/A"
+            status["gpu"] = f"available: {gpu_count} GPU(s) - {gpu_name}"
+        else:
+            status["gpu"] = "unavailable: No CUDA devices found"
+    except Exception as e:
+        status["gpu"] = f"unavailable: {str(e)[:100]}"
+
+    overall_status = "healthy" if status["database"] == "healthy" else "degraded"
+
+    return {
+        "status": overall_status,
+        "services": status,
+        "version": "1.0.0"
+    }
 
 
 # Include API routes
