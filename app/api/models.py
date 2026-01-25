@@ -12,7 +12,7 @@ router = APIRouter(prefix="/models", tags=["Models"])
 async def create_model(
     model: ModelCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user)
 ):
     """Create a new model"""
     db_model = Model(
@@ -23,7 +23,7 @@ async def create_model(
         model_path=model.model_path,
         input_schema=model.input_schema,
         hardware=model.hardware,
-        owner_id=current_user.id
+        owner_id=current_user.id if current_user else None
     )
 
     db.add(db_model)
@@ -58,14 +58,14 @@ async def get_model(model_id: str, db: Session = Depends(get_db)):
 async def delete_model(
     model_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user)
 ):
     """Delete a model"""
     model = db.query(Model).filter(Model.id == model_id).first()
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
 
-    if model.owner_id != current_user.id:
+    if current_user and model.owner_id and model.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to delete this model")
 
     db.delete(model)
