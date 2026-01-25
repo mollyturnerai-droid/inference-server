@@ -17,6 +17,7 @@ class ModelLoader:
         model_classes = {
             ModelType.TEXT_GENERATION: TextGenerationModel,
             ModelType.IMAGE_GENERATION: ImageGenerationModel,
+            ModelType.TEXT_TO_IMAGE: ImageGenerationModel,  # Same as image-generation
         }
 
         model_class = model_classes.get(model_type)
