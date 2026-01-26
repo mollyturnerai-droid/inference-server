@@ -1,7 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from pathlib import Path
+from uuid import uuid4
+import os
 from app.core.config import settings
+from app.services.storage import storage_service
 
 router = APIRouter(prefix="/files", tags=["Files"])
 
@@ -36,5 +39,35 @@ async def serve_file(file_path: str):
         content_type = "image/gif"
     elif suffix == ".webp":
         content_type = "image/webp"
+    elif suffix == ".wav":
+        content_type = "audio/wav"
+    elif suffix == ".mp3":
+        content_type = "audio/mpeg"
+    elif suffix == ".m4a":
+        content_type = "audio/mp4"
+    elif suffix == ".ogg":
+        content_type = "audio/ogg"
 
     return FileResponse(full_path, media_type=content_type)
+
+
+@router.post("/upload")
+async def upload_file(file: UploadFile = File(...)):
+    if not file.content_type or not file.content_type.startswith("audio/"):
+        raise HTTPException(status_code=400, detail="Only audio uploads are supported")
+
+    original_name = file.filename or "upload"
+    _, ext = os.path.splitext(original_name)
+    ext = ext.lower() if ext else ""
+    if ext not in {".wav", ".mp3", ".m4a", ".ogg"}:
+        ext = ".wav"
+
+    file_path = f"uploads/{uuid4().hex}{ext}"
+    content = await file.read()
+    await storage_service.save_file(file_path=file_path, content=content, content_type=file.content_type)
+
+    return {
+        "file_path": file_path,
+        "url": storage_service.get_public_url(file_path),
+        "content_type": file.content_type,
+    }

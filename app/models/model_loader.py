@@ -1,8 +1,9 @@
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 from app.schemas import ModelType
 from .base_model import BaseInferenceModel
 from .text_generation import TextGenerationModel
 from .image_generation import ImageGenerationModel
+from .text_to_speech import TextToSpeechModel
 import os
 from app.core.config import settings
 
@@ -18,6 +19,7 @@ class ModelLoader:
             ModelType.TEXT_GENERATION: TextGenerationModel,
             ModelType.IMAGE_GENERATION: ImageGenerationModel,
             ModelType.TEXT_TO_IMAGE: ImageGenerationModel,  # Same as image-generation
+            ModelType.TEXT_TO_SPEECH: TextToSpeechModel,
         }
 
         model_class = model_classes.get(model_type)
@@ -29,13 +31,16 @@ class ModelLoader:
     def load_model(
         self,
         model_id: str,
-        model_type: ModelType,
+        model_type: Union[ModelType, str],
         model_path: str,
         hardware: str = "auto"
     ) -> BaseInferenceModel:
         """Load a model into memory"""
         if model_id in self.loaded_models:
             return self.loaded_models[model_id]
+
+        if isinstance(model_type, str):
+            model_type = ModelType(model_type)
 
         device = self._get_device(hardware)
         model_class = self.get_model_class(model_type)

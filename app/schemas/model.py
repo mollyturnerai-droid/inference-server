@@ -9,6 +9,7 @@ class ModelType(str, Enum):
     IMAGE_GENERATION = "image-generation"
     IMAGE_TO_TEXT = "image-to-text"
     TEXT_TO_IMAGE = "text-to-image"
+    TEXT_TO_SPEECH = "text-to-speech"
     CLASSIFICATION = "classification"
     EMBEDDINGS = "embeddings"
     SPEECH_TO_TEXT = "speech-to-text"
