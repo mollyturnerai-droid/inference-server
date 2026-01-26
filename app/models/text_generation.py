@@ -6,11 +6,12 @@ from .base_model import BaseInferenceModel
 class TextGenerationModel(BaseInferenceModel):
     def load(self):
         """Load a text generation model from HuggingFace"""
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, trust_remote_code=True)
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_path,
             device_map=self.device if self.device != "cpu" else None,
-            torch_dtype="auto"
+            torch_dtype="auto",
+            trust_remote_code=True,
         )
 
         if self.device == "cpu":
