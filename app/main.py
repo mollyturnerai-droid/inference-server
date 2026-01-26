@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse
@@ -8,6 +8,7 @@ from slowapi.errors import RateLimitExceeded
 from app.api import api_router
 from app.db import engine, Base
 from app.core.config import settings
+from app.services.auth import get_current_user
 
 # Create database tables (only if database is available)
 try:
@@ -672,6 +673,62 @@ async def health_detailed():
         "status": overall_status,
         "services": status,
         "version": "1.0.0"
+    }
+
+
+@app.get("/v1/system/status")
+async def system_status(current_user=Depends(get_current_user)):
+    from app.db import engine
+    from app.models.model_loader import model_loader
+    import redis
+
+    status = {
+        "database": "unknown",
+        "redis": "unknown",
+        "gpu": "unknown",
+        "loaded_models": [],
+    }
+
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        status["database"] = "healthy"
+    except Exception as e:
+        status["database"] = f"unavailable: {str(e)[:100]}"
+
+    try:
+        r = redis.Redis(
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+            password=settings.REDIS_PASSWORD,
+            db=settings.REDIS_DB
+        )
+        r.ping()
+        status["redis"] = "healthy"
+    except Exception as e:
+        status["redis"] = f"unavailable: {str(e)[:100]}"
+
+    try:
+        import torch
+        if torch.cuda.is_available():
+            gpu_count = torch.cuda.device_count()
+            gpu_name = torch.cuda.get_device_name(0) if gpu_count > 0 else "N/A"
+            status["gpu"] = f"available: {gpu_count} GPU(s) - {gpu_name}"
+        else:
+            status["gpu"] = "unavailable: No CUDA devices found"
+    except Exception as e:
+        status["gpu"] = f"unavailable: {str(e)[:100]}"
+
+    try:
+        status["loaded_models"] = list(model_loader.loaded_models.keys())
+    except Exception:
+        status["loaded_models"] = []
+
+    overall_status = "healthy" if status["database"] == "healthy" else "degraded"
+    return {
+        "status": overall_status,
+        "services": status,
     }
 
 
