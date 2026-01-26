@@ -95,7 +95,10 @@ class StorageService:
     def get_public_url(self, file_path: str) -> str:
         """Get publicly accessible HTTP URL for a file"""
         if self.storage_type == "local":
-            return f"{settings.API_BASE_URL}/v1/files/{file_path}"
+            base = (settings.API_BASE_URL or "").rstrip("/")
+            if not base or base in {"http://localhost:8000", "http://127.0.0.1:8000"}:
+                return f"/v1/files/{file_path}"
+            return f"{base}/v1/files/{file_path}"
         elif self.storage_type == "s3":
             # Generate presigned URL for S3
             url = self.s3_client.generate_presigned_url(

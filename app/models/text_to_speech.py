@@ -43,8 +43,13 @@ class TextToSpeechModel(BaseInferenceModel):
             return parsed.path
 
         # If it points at this API's /v1/files/... route, map it back to storage directly
-        api_files_prefix = f"{settings.API_BASE_URL}/v1/files/"
-        if reference_audio.startswith(api_files_prefix):
+        if reference_audio.startswith("/v1/files/"):
+            rel = reference_audio[len("/v1/files/"):]
+            return os.path.join(settings.STORAGE_PATH, rel)
+
+        api_base = (settings.API_BASE_URL or "").rstrip("/")
+        api_files_prefix = f"{api_base}/v1/files/" if api_base else ""
+        if api_files_prefix and reference_audio.startswith(api_files_prefix):
             rel = reference_audio[len(api_files_prefix):]
             return os.path.join(settings.STORAGE_PATH, rel)
 
