@@ -2,6 +2,12 @@
 
 This guide provides practical examples of using the Inference Server.
 
+Throughout these examples, set a base URL and reuse it:
+
+```bash
+BASE_URL=http://localhost:8000
+```
+
 ## Example 1: Text Generation with GPT-2
 
 ### 1. Start the Server
@@ -14,7 +20,7 @@ docker-compose up -d
 
 ```bash
 # Register
-curl -X POST http://localhost:8000/v1/auth/register \
+curl -X POST $BASE_URL/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "username": "alice",
@@ -23,14 +29,14 @@ curl -X POST http://localhost:8000/v1/auth/register \
   }'
 
 # Login
-TOKEN=$(curl -X POST http://localhost:8000/v1/auth/token \
+TOKEN=$(curl -X POST $BASE_URL/v1/auth/token \
   -d "username=alice&password=secure123" | jq -r .access_token)
 ```
 
 ### 3. Create a Text Generation Model
 
 ```bash
-MODEL_ID=$(curl -X POST http://localhost:8000/v1/models \
+MODEL_ID=$(curl -X POST $BASE_URL/v1/models \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -86,7 +92,7 @@ echo "Prediction ID: $PRED_ID"
 ```bash
 # Poll until complete
 while true; do
-  STATUS=$(curl -s http://localhost:8000/v1/predictions/$PRED_ID | jq -r .status)
+  STATUS=$(curl -s $BASE_URL/v1/predictions/$PRED_ID | jq -r .status)
   echo "Status: $STATUS"
 
   if [ "$STATUS" = "succeeded" ] || [ "$STATUS" = "failed" ]; then
@@ -97,7 +103,7 @@ while true; do
 done
 
 # Get final result
-curl -s http://localhost:8000/v1/predictions/$PRED_ID | jq .
+curl -s $BASE_URL/v1/predictions/$PRED_ID | jq .
 ```
 
 ## Example 2: Image Generation with Stable Diffusion
@@ -105,7 +111,7 @@ curl -s http://localhost:8000/v1/predictions/$PRED_ID | jq .
 ### 1. Create an Image Generation Model
 
 ```bash
-IMG_MODEL_ID=$(curl -X POST http://localhost:8000/v1/models \
+IMG_MODEL_ID=$(curl -X POST $BASE_URL/v1/models \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -151,7 +157,7 @@ IMG_MODEL_ID=$(curl -X POST http://localhost:8000/v1/models \
 ### 2. Generate an Image
 
 ```bash
-curl -X POST http://localhost:8000/v1/predictions \
+curl -X POST $BASE_URL/v1/predictions \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d "{
@@ -198,7 +204,7 @@ python webhook_receiver.py
 ### 2. Create Prediction with Webhook
 
 ```bash
-curl -X POST http://localhost:8000/v1/predictions \
+curl -X POST $BASE_URL/v1/predictions \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d "{
@@ -226,7 +232,7 @@ PROMPTS=(
 for prompt in "${PROMPTS[@]}"; do
   echo "Creating prediction for: $prompt"
 
-  curl -X POST http://localhost:8000/v1/predictions \
+  curl -X POST $BASE_URL/v1/predictions \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d "{
@@ -307,14 +313,15 @@ class InferenceClient:
 # Usage
 if __name__ == "__main__":
     # Login first
+    base_url = "http://localhost:8000"
     login_response = requests.post(
-        "http://localhost:8000/v1/auth/token",
+        f"{base_url}/v1/auth/token",
         data={"username": "alice", "password": "secure123"}
     )
     token = login_response.json()["access_token"]
 
     # Create client
-    client = InferenceClient("http://localhost:8000", token)
+    client = InferenceClient(base_url, token)
 
     # Run prediction
     result = client.predict_and_wait(
@@ -332,15 +339,15 @@ if __name__ == "__main__":
 
 ```bash
 # List all predictions
-curl http://localhost:8000/v1/predictions \
+curl $BASE_URL/v1/predictions \
   -H "Authorization: Bearer $TOKEN" | jq .
 
 # Filter by status
-curl "http://localhost:8000/v1/predictions?status=succeeded" \
+curl "$BASE_URL/v1/predictions?status=succeeded" \
   -H "Authorization: Bearer $TOKEN" | jq .
 
 # Pagination
-curl "http://localhost:8000/v1/predictions?skip=0&limit=10" \
+curl "$BASE_URL/v1/predictions?skip=0&limit=10" \
   -H "Authorization: Bearer $TOKEN" | jq .
 ```
 
@@ -348,13 +355,13 @@ curl "http://localhost:8000/v1/predictions?skip=0&limit=10" \
 
 ```bash
 # List all models
-curl http://localhost:8000/v1/models | jq .
+curl $BASE_URL/v1/models | jq .
 
 # Get specific model
-curl http://localhost:8000/v1/models/$MODEL_ID | jq .
+curl $BASE_URL/v1/models/$MODEL_ID | jq .
 
 # Delete model (requires authentication)
-curl -X DELETE http://localhost:8000/v1/models/$MODEL_ID \
+curl -X DELETE $BASE_URL/v1/models/$MODEL_ID \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -421,7 +428,7 @@ class SentimentAnalysisModel(BaseInferenceModel):
 Then use it:
 
 ```bash
-curl -X POST http://localhost:8000/v1/models \
+curl -X POST $BASE_URL/v1/models \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -437,6 +444,95 @@ curl -X POST http://localhost:8000/v1/models \
   }'
 ```
 
+## Example 10: Catalog (curated models) + Mount
+
+List curated models:
+
+```bash
+curl -s $BASE_URL/v1/catalog/models | jq .
+```
+
+Filter by category (e.g. `text-to-speech`):
+
+```bash
+curl -s "$BASE_URL/v1/catalog/models?category=text-to-speech" | jq .
+```
+
+Create or update a catalog entry (requires `CATALOG_ADMIN_TOKEN` configured on the server):
+
+```bash
+CATALOG_TOKEN=YOUR_CATALOG_ADMIN_TOKEN
+
+curl -s -X POST $BASE_URL/v1/catalog/admin/models \
+  -H "Content-Type: application/json" \
+  -H "X-Catalog-Admin-Token: $CATALOG_TOKEN" \
+  -d '{
+    "id": "qwen3-tts",
+    "name": "Qwen3 TTS",
+    "description": "Text-to-speech model",
+    "model_type": "text-to-speech",
+    "model_path": "qwen/qwen3-tts",
+    "size": "large",
+    "vram_gb": 12,
+    "recommended_hardware": "gpu",
+    "tags": ["tts", "qwen"],
+    "downloads": null,
+    "license": null
+  }' | jq .
+```
+
+Mount a catalog entry into a runnable model (creates a row in `/v1/models`):
+
+```bash
+curl -s -X POST $BASE_URL/v1/catalog/mount \
+  -H "Content-Type: application/json" \
+  -d '{
+    "catalog_id": "qwen3-tts",
+    "name": "qwen3-tts-v2"
+  }' | jq .
+```
+
+## Example 11: Text-to-Speech (TTS)
+
+Upload reference audio (optional, for voice cloning models that support it):
+
+```bash
+UPLOAD_RES=$(curl -s -X POST $BASE_URL/v1/files/upload \
+  -F "file=@reference.wav")
+
+REF_PATH=$(echo "$UPLOAD_RES" | jq -r .file_path)
+echo "Reference audio path: $REF_PATH"
+```
+
+Run a TTS prediction:
+
+```bash
+PRED_ID=$(curl -s -X POST $BASE_URL/v1/predictions \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"model_id\": \"$MODEL_ID\",
+    \"input\": {
+      \"text\": \"Hello! This is a test.\",
+      \"reference_audio\": \"$REF_PATH\"
+    }
+  }" | jq -r .id)
+
+curl -s $BASE_URL/v1/predictions/$PRED_ID | jq .
+```
+
+Notes:
+- Depending on configuration, `audio_url` may be returned as an absolute URL (when `API_BASE_URL` is set) or as a relative path like `/v1/files/...`.
+
+## Example 12: Authenticated system status
+
+This endpoint requires Bearer auth:
+
+```bash
+curl -s $BASE_URL/v1/system/status \
+  -H "Authorization: Bearer $TOKEN" | jq .
+```
+
 ## Tips and Best Practices
 
 1. **Authentication**: Always store tokens securely, never commit them to version control
@@ -446,6 +542,13 @@ curl -X POST http://localhost:8000/v1/models \
 5. **Batch Processing**: Process multiple predictions in parallel for better throughput
 6. **Model Caching**: Models are cached after first use, subsequent predictions are faster
 7. **Resource Management**: Monitor memory usage when loading large models
+
+Environment variables to pay attention to in deployments:
+- **API_BASE_URL**: set to your public host if you want absolute file URLs.
+- **CATALOG_ADMIN_TOKEN**: enables `/v1/catalog/admin/models`.
+- **CORS_ALLOW_ORIGINS**, **CORS_ALLOW_CREDENTIALS**: public/private deployments.
+- **TRUST_PROXY_HEADERS**: enable when behind a proxy and you want correct client IP for rate limiting.
+- **WEBHOOK_ALLOWED_HOSTS**: comma-separated hostnames; when set, webhooks are only sent to those hosts.
 
 ## Troubleshooting
 
