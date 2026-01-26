@@ -26,7 +26,8 @@ RUN python3.11 -m pip install --no-cache-dir --upgrade pip
 COPY requirements.txt .
 
 # Install Python dependencies with Python 3.11
-RUN python3.11 -m pip install --no-cache-dir -r requirements.txt
+RUN python3.11 -m pip install --no-cache-dir -r requirements.txt && \
+    python3.11 -m pip install --no-cache-dir --no-deps chatterbox-tts
 
 # Copy application code
 COPY . .
