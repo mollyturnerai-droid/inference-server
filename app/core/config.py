@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     # API URL for generating file URLs
     API_BASE_URL: str = "http://localhost:8000"
 
+    CORS_ALLOW_ORIGINS: str = "*"
+    CORS_ALLOW_CREDENTIALS: bool = True
+    TRUST_PROXY_HEADERS: bool = False
+    WEBHOOK_ALLOWED_HOSTS: Optional[str] = None
+
     # Model Configuration
     MODEL_CACHE_DIR: str = "/tmp/model_cache"
     MAX_MODEL_CACHE_SIZE_GB: int = 50

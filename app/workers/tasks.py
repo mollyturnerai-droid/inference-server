@@ -6,6 +6,8 @@ from app.schemas import PredictionStatus
 from datetime import datetime
 import traceback
 import httpx
+from urllib.parse import urlparse
+from app.core.config import settings
 
 
 class DatabaseTask(Task):
@@ -72,12 +74,19 @@ def run_inference(self, prediction_id: str, model_id: str, model_type: str, mode
 
     finally:
         db.close()
+        self._db = None
 
 
 @celery_app.task(name="send_webhook")
 def send_webhook(webhook_url: str, prediction_id: str, output: dict):
     """Send webhook notification"""
     try:
+        allowed_raw = (settings.WEBHOOK_ALLOWED_HOSTS or "").strip()
+        if allowed_raw:
+            host = urlparse(webhook_url).hostname
+            allowed = {h.strip().lower() for h in allowed_raw.split(",") if h.strip()}
+            if not host or host.lower() not in allowed:
+                return
         with httpx.Client(timeout=10.0) as client:
             client.post(
                 webhook_url,

@@ -16,8 +16,19 @@ except Exception as e:
     print(f"Warning: Could not create database tables: {e}")
     print("Database will be initialized when connection is available")
 
+def _get_client_ip(request: Request) -> str:
+    if settings.TRUST_PROXY_HEADERS:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip.strip()
+    return get_remote_address(request)
+
+
 # Initialize rate limiter
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=_get_client_ip)
 
 # Create FastAPI app
 app = FastAPI(
@@ -30,11 +41,16 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS middleware
+_origins_raw = (settings.CORS_ALLOW_ORIGINS or "").strip()
+if _origins_raw == "*":
+    _allow_origins = ["*"]
+else:
+    _allow_origins = [o.strip() for o in _origins_raw.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_allow_origins,
+    allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
