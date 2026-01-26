@@ -115,6 +115,47 @@ MODEL_CATALOG: Dict[str, List[CatalogModel]] = {
             license="apache-2.0"
         ),
     ],
+    "text-to-speech": [
+        CatalogModel(
+            id="xtts-v2",
+            name="XTTS v2",
+            description="Multilingual text-to-speech with voice cloning support",
+            model_type=ModelType.TEXT_TO_SPEECH,
+            model_path="coqui/XTTS-v2",
+            size="large",
+            vram_gb=12,
+            recommended_hardware="gpu",
+            tags=["tts", "voice-cloning", "multilingual"],
+            downloads=None,
+            license=None
+        ),
+        CatalogModel(
+            id="bark",
+            name="Bark",
+            description="Expressive text-to-speech model for realistic speech generation",
+            model_type=ModelType.TEXT_TO_SPEECH,
+            model_path="suno/bark",
+            size="large",
+            vram_gb=12,
+            recommended_hardware="gpu",
+            tags=["tts", "expressive"],
+            downloads=None,
+            license=None
+        ),
+        CatalogModel(
+            id="speecht5-tts",
+            name="SpeechT5 TTS",
+            description="Lightweight text-to-speech model suitable for CPU usage",
+            model_type=ModelType.TEXT_TO_SPEECH,
+            model_path="microsoft/speecht5_tts",
+            size="medium",
+            vram_gb=None,
+            recommended_hardware="cpu",
+            tags=["tts", "lightweight"],
+            downloads=None,
+            license=None
+        ),
+    ],
     "text-to-image": [
         CatalogModel(
             id="sd-v1-5",
@@ -590,15 +631,16 @@ def _get_catalog() -> Dict[str, List[CatalogModel]]:
     if _catalog_cache is not None:
         return _catalog_cache
 
-    catalog: Dict[str, List[CatalogModel]] = MODEL_CATALOG
+    catalog: Dict[str, List[CatalogModel]] = {k: list(v) for k, v in MODEL_CATALOG.items()}
     path = settings.CATALOG_PATH
     try:
         if path and os.path.exists(path):
             loaded = _load_catalog_from_disk()
             if loaded:
-                catalog = loaded
+                for category, models in loaded.items():
+                    catalog[str(category)] = models
     except Exception:
-        catalog = MODEL_CATALOG
+        catalog = {k: list(v) for k, v in MODEL_CATALOG.items()}
 
     _catalog_cache = catalog
     return _catalog_cache
