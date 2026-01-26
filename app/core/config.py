@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     MAX_BATCH_SIZE: int = 8
     ENABLE_GPU: bool = True
 
+    CATALOG_PATH: str = "/tmp/model_catalog.json"
+    CATALOG_ADMIN_TOKEN: Optional[str] = None
+
     class Config:
         env_file = ".env"
         case_sensitive = True

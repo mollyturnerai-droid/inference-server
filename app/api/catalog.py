@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Header
 from typing import List, Optional
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -11,10 +11,13 @@ from app.services.catalog import (
     get_catalog_models_by_type,
     get_catalog_model_by_id,
     get_catalog_categories,
+    upsert_catalog_model,
+    delete_catalog_model,
 )
 from app.db import get_db
 from app.db.models import Model
 from app.schemas.model import ModelType
+from app.core.config import settings
 
 router = APIRouter(prefix="/catalog", tags=["Catalog"])
 
@@ -44,6 +47,13 @@ class MountResponse(BaseModel):
     model_path: str
     model_type: str
     hardware: str
+
+
+def _require_catalog_admin(x_catalog_admin_token: Optional[str] = Header(default=None)):
+    if not settings.CATALOG_ADMIN_TOKEN:
+        raise HTTPException(status_code=503, detail="Catalog admin token not configured")
+    if x_catalog_admin_token != settings.CATALOG_ADMIN_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 @router.get("/models", response_model=CatalogResponse)
@@ -164,3 +174,23 @@ async def mount_catalog_model(
         model_type=catalog_model.model_type.value,
         hardware=hardware
     )
+
+
+@router.post("/admin/models", response_model=CatalogModel, dependencies=[Depends(_require_catalog_admin)])
+async def admin_create_or_update_catalog_model(model: CatalogModel):
+    return upsert_catalog_model(model)
+
+
+@router.put("/admin/models/{model_id}", response_model=CatalogModel, dependencies=[Depends(_require_catalog_admin)])
+async def admin_put_catalog_model(model_id: str, model: CatalogModel):
+    if model.id != model_id:
+        raise HTTPException(status_code=400, detail="model_id path parameter must match body.id")
+    return upsert_catalog_model(model)
+
+
+@router.delete("/admin/models/{model_id}", dependencies=[Depends(_require_catalog_admin)])
+async def admin_delete_catalog_model(model_id: str):
+    removed = delete_catalog_model(model_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Model not found")
+    return {"success": True}

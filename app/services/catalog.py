@@ -1,6 +1,9 @@
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from app.schemas.model import ModelType
+from app.core.config import settings
+import json
+import os
 
 
 class CatalogModel(BaseModel):
@@ -556,22 +559,109 @@ MODEL_CATALOG: Dict[str, List[CatalogModel]] = {
 }
 
 
+_catalog_cache: Optional[Dict[str, List[CatalogModel]]] = None
+
+
+def _load_catalog_from_disk() -> Dict[str, List[CatalogModel]]:
+    path = settings.CATALOG_PATH
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    loaded: Dict[str, List[CatalogModel]] = {}
+    if isinstance(data, dict):
+        for category, items in data.items():
+            if not isinstance(items, list):
+                continue
+            models: List[CatalogModel] = []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    models.append(CatalogModel(**item))
+                except Exception:
+                    continue
+            loaded[str(category)] = models
+
+    return loaded
+
+
+def _get_catalog() -> Dict[str, List[CatalogModel]]:
+    global _catalog_cache
+    if _catalog_cache is not None:
+        return _catalog_cache
+
+    catalog: Dict[str, List[CatalogModel]] = MODEL_CATALOG
+    path = settings.CATALOG_PATH
+    try:
+        if path and os.path.exists(path):
+            loaded = _load_catalog_from_disk()
+            if loaded:
+                catalog = loaded
+    except Exception:
+        catalog = MODEL_CATALOG
+
+    _catalog_cache = catalog
+    return _catalog_cache
+
+
+def _save_catalog(catalog: Dict[str, List[CatalogModel]]):
+    path = settings.CATALOG_PATH
+    if not path:
+        return
+
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    payload: Dict[str, Any] = {}
+    for category, models in catalog.items():
+        payload[category] = [m.model_dump() for m in models]
+
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    os.replace(tmp_path, path)
+
+
+def upsert_catalog_model(model: CatalogModel) -> CatalogModel:
+    catalog = _get_catalog()
+    model_id = model.id
+    for category, models in list(catalog.items()):
+        catalog[category] = [m for m in models if m.id != model_id]
+
+    category = model.model_type.value
+    catalog.setdefault(category, []).append(model)
+    _save_catalog(catalog)
+    return model
+
+
+def delete_catalog_model(model_id: str) -> bool:
+    catalog = _get_catalog()
+    removed = False
+    for category, models in list(catalog.items()):
+        filtered = [m for m in models if m.id != model_id]
+        if len(filtered) != len(models):
+            removed = True
+        catalog[category] = filtered
+
+    if removed:
+        _save_catalog(catalog)
+    return removed
+
+
 def get_all_catalog_models() -> List[CatalogModel]:
     """Get all models from the catalog"""
     models = []
-    for category_models in MODEL_CATALOG.values():
+    for category_models in _get_catalog().values():
         models.extend(category_models)
     return models
 
 
 def get_catalog_models_by_type(model_type: str) -> List[CatalogModel]:
     """Get models from catalog filtered by type"""
-    return MODEL_CATALOG.get(model_type, [])
+    return _get_catalog().get(model_type, [])
 
 
 def get_catalog_model_by_id(model_id: str) -> Optional[CatalogModel]:
     """Get a specific model from the catalog by ID"""
-    for category_models in MODEL_CATALOG.values():
+    for category_models in _get_catalog().values():
         for model in category_models:
             if model.id == model_id:
                 return model
@@ -580,4 +670,4 @@ def get_catalog_model_by_id(model_id: str) -> Optional[CatalogModel]:
 
 def get_catalog_categories() -> List[str]:
     """Get all available model categories"""
-    return list(MODEL_CATALOG.keys())
+    return list(_get_catalog().keys())
