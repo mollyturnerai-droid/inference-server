@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     # Model Configuration
     MODEL_CACHE_DIR: str = "/tmp/model_cache"
     MAX_MODEL_CACHE_SIZE_GB: int = 50
+    MAX_LOADED_MODELS: int = 0
+    MODEL_IDLE_TTL_SECONDS: Optional[int] = None
+
+    BUILD_GIT_SHA: Optional[str] = None
+    BUILD_IMAGE_TAG: Optional[str] = None
 
     # Worker Configuration
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"

@@ -729,6 +729,14 @@ async def system_status(current_user=Depends(get_current_user)):
     return {
         "status": overall_status,
         "services": status,
+        "build": {
+            "git_sha": settings.BUILD_GIT_SHA,
+            "image_tag": settings.BUILD_IMAGE_TAG,
+        },
+        "model_loader": {
+            "max_loaded_models": settings.MAX_LOADED_MODELS,
+            "idle_ttl_seconds": settings.MODEL_IDLE_TTL_SECONDS,
+        },
     }
 
 
