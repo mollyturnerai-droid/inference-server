@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from typing import Optional
+import hashlib
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from app.core.config import settings
@@ -7,12 +8,32 @@ from app.core.config import settings
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
+def _bcrypt_input(password: str) -> str:
+    if password is None:
+        return ""
+    raw = password.encode("utf-8")
+    if len(raw) <= 72:
+        return password
+    return hashlib.sha256(raw).hexdigest()
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        if pwd_context.verify(plain_password, hashed_password):
+            return True
+    except Exception:
+        pass
+
+    if plain_password and len(plain_password.encode("utf-8")) > 72:
+        try:
+            return pwd_context.verify(_bcrypt_input(plain_password), hashed_password)
+        except Exception:
+            return False
+    return False
 
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    return pwd_context.hash(_bcrypt_input(password))
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
