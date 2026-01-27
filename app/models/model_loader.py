@@ -43,7 +43,17 @@ class ModelLoader:
             model_type = ModelType(model_type)
 
         device = self._get_device(hardware)
-        model_class = self.get_model_class(model_type)
+
+        if model_type == ModelType.TEXT_TO_SPEECH and (model_path or "").startswith("nvidia/magpie_tts"):
+            try:
+                from .magpie_text_to_speech import MagpieTextToSpeechModel
+            except Exception as e:
+                raise RuntimeError(
+                    "Magpie TTS requires NeMo dependencies. Use the NeMo-enabled image variant or install nemo_toolkit[tts]."
+                ) from e
+            model_class = MagpieTextToSpeechModel
+        else:
+            model_class = self.get_model_class(model_type)
 
         model = model_class(model_path=model_path, device=device)
         model.load()

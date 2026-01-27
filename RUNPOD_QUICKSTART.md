@@ -20,6 +20,15 @@ docker build -f Dockerfile.gpu -t YOUR_DOCKERHUB_USERNAME/inference-server:gpu .
 docker push YOUR_DOCKERHUB_USERNAME/inference-server:gpu
 ```
 
+Optional: build the NeMo/Magpie TTS enabled GPU image variant:
+
+```bash
+docker build -f Dockerfile.gpu.nemo -t YOUR_DOCKERHUB_USERNAME/inference-server:gpu.nemo .
+docker push YOUR_DOCKERHUB_USERNAME/inference-server:gpu.nemo
+```
+
+Note: `Dockerfile.gpu.nemo` uses an `nvcr.io/nvidia/pytorch` base image.
+
 **Note**: Replace `YOUR_DOCKERHUB_USERNAME` with your actual Docker Hub username.
 
 ## Step 2: Deploy on RunPod (2 mins)
@@ -69,6 +78,10 @@ nano .env
 
 # Start all services
 docker-compose -f docker-compose.runpod.yml up -d
+
+# If using the NeMo/Magpie image variant, set IMAGE_TAG before starting:
+# export IMAGE_TAG=gpu.nemo
+# docker-compose -f docker-compose.runpod.yml up -d
 
 # Wait for services to initialize
 sleep 30

@@ -1,0 +1,36 @@
+# GPU-enabled Dockerfile with NeMo (Magpie TTS) support
+FROM nvcr.io/nvidia/pytorch:25.01-py3
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    redis-server \
+    ffmpeg \
+    libsndfile1 \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY requirements.nemo.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.nemo.txt && \
+    pip install --no-cache-dir --no-deps chatterbox-tts
+
+# Copy application code
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p /tmp/inference_storage /tmp/model_cache logs
+
+# Make startup script executable
+RUN chmod +x /app/start-all.sh
+
+# Expose port
+EXPOSE 8000
+
+# Run the all-in-one startup script
+CMD ["/app/start-all.sh"]
