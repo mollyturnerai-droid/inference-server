@@ -6,7 +6,8 @@ import os
 from typing import Any, Dict, Optional
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from mcp.server.fastmcp import FastMCP
 
@@ -16,10 +17,20 @@ from mcp_gateway.sse import create_sse_server
 INFERENCE_BASE_URL = os.getenv("INFERENCE_BASE_URL", "http://api:8000").rstrip("/")
 CATALOG_ADMIN_TOKEN = os.getenv("CATALOG_ADMIN_TOKEN")
 DEFAULT_TIMEOUT_SECONDS = float(os.getenv("MCP_GATEWAY_TIMEOUT_SECONDS", "120"))
+API_KEY = os.getenv("API_KEY")
 
 
 app = FastAPI()
 mcp = FastMCP("InferenceServer")
+
+
+@app.middleware("http")
+async def require_api_key(request: Request, call_next):
+    if API_KEY:
+        key = request.headers.get("x-api-key")
+        if key != API_KEY:
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    return await call_next(request)
 
 
 def _coerce_json(value: Any) -> Any:

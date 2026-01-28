@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     TRUST_PROXY_HEADERS: bool = False
     WEBHOOK_ALLOWED_HOSTS: Optional[str] = None
 
+    API_KEY: Optional[str] = None
+
     # Model Configuration
     MODEL_CACHE_DIR: str = "/tmp/model_cache"
     MAX_MODEL_CACHE_SIZE_GB: int = 50

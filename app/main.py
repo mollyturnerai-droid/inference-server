@@ -57,6 +57,15 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def require_api_key(request: Request, call_next):
+    if settings.API_KEY:
+        key = request.headers.get("x-api-key")
+        if key != settings.API_KEY:
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    return await call_next(request)
+
+
 @app.get("/")
 async def root():
     return {
