@@ -86,6 +86,19 @@ services:
       - model_cache:/tmp/model_cache
       - storage:/tmp/inference_storage
 
+  mcp_gateway:
+    image: ${DOCKERHUB_USERNAME}/inference-server:${IMAGE_TAG:-gpu}
+    command: ["uvicorn", "mcp_gateway.main:app", "--host", "0.0.0.0", "--port", "8001"]
+    ports:
+      - "${MCP_PORT:-8001}:8001"
+    environment:
+      - INFERENCE_BASE_URL=http://api:8000
+      - CATALOG_ADMIN_TOKEN=${CATALOG_ADMIN_TOKEN}
+      - MCP_GATEWAY_TIMEOUT_SECONDS=${MCP_GATEWAY_TIMEOUT_SECONDS:-120}
+    depends_on:
+      api:
+        condition: service_started
+
 volumes:
   postgres_data:
   redis_data:
