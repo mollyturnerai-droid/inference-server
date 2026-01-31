@@ -6,9 +6,9 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from app.api import api_router
-from app.db import engine, Base
+from app.db import engine, Base, SessionLocal, ApiKey
 from app.core.config import settings
-from app.services.auth import get_current_user
+from app.services.auth import get_current_api_key
 
 # Create database tables (only if database is available)
 try:
@@ -59,10 +59,50 @@ app.add_middleware(
 
 @app.middleware("http")
 async def require_api_key(request: Request, call_next):
-    if settings.API_KEY:
-        key = request.headers.get("x-api-key")
-        if key != settings.API_KEY:
+    public_paths = {
+        "/",
+        "/health",
+        "/health/detailed",
+        "/docs",
+        "/openapi.json",
+        "/redoc",
+        "/playground",
+        "/favicon.ico",
+    }
+
+    path = request.url.path
+    if path in public_paths or path.startswith("/v1/files/"):
+        return await call_next(request)
+
+    raw = request.headers.get("x-api-key")
+    if not raw:
+        auth = request.headers.get("authorization")
+        if auth and auth.lower().startswith("bearer "):
+            raw = auth.split(" ", 1)[1].strip()
+
+    if not raw:
+        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+    if settings.API_KEY and raw == settings.API_KEY:
+        return await call_next(request)
+
+    import hashlib
+
+    key_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    db = SessionLocal()
+    try:
+        row = db.query(ApiKey).filter(ApiKey.key_hash == key_hash).first()
+        if not row or not row.is_active:
             return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        try:
+            from datetime import datetime
+            row.last_used_at = datetime.utcnow()
+            db.commit()
+        except Exception:
+            db.rollback()
+    finally:
+        db.close()
+
     return await call_next(request)
 
 
@@ -119,6 +159,11 @@ async def playground():
     <header>
       <h1>Inference Server Playground</h1>
       <div class=\"muted\">Select a model from the curated catalog, mount it, run a prediction, and view results.</div>
+      <div style=\"margin-top:10px; max-width:520px\">
+        <label for=\"apiKey\">API key</label>
+        <input id=\"apiKey\" placeholder=\"X-API-Key\" />
+        <div class=\"muted\">Saved locally in your browser and sent as <code>X-API-Key</code> on requests.</div>
+      </div>
     </header>
     <main>
       <section class=\"card\">
@@ -246,8 +291,12 @@ async def playground():
       }
 
       async function api(path, options) {
+        const apiKey = (el('apiKey') && el('apiKey').value) ? el('apiKey').value.trim() : '';
+        const baseHeaders = { 'Content-Type': 'application/json' };
+        if (apiKey) baseHeaders['X-API-Key'] = apiKey;
+        const extraHeaders = (options && options.headers) ? options.headers : {};
         const res = await fetch(path, {
-          headers: { 'Content-Type': 'application/json' },
+          headers: { ...baseHeaders, ...extraHeaders },
           ...options,
         });
         const text = await res.text();
@@ -412,7 +461,7 @@ async def playground():
         try {
           const res = await fetch('/v1/catalog/admin/models', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Catalog-Admin-Token': token },
+            headers: { 'Content-Type': 'application/json', 'X-Catalog-Admin-Token': token, 'X-API-Key': (el('apiKey') ? el('apiKey').value.trim() : '') },
             body: JSON.stringify(body),
           });
           const text = await res.text();
@@ -453,7 +502,7 @@ async def playground():
         try {
           const res = await fetch(`/v1/catalog/admin/models/${encodeURIComponent(id)}`, {
             method: 'DELETE',
-            headers: { 'X-Catalog-Admin-Token': token },
+            headers: { 'X-Catalog-Admin-Token': token, 'X-API-Key': (el('apiKey') ? el('apiKey').value.trim() : '') },
           });
           const text = await res.text();
           let data = null;
@@ -485,7 +534,7 @@ async def playground():
         el('btnUploadRef').disabled = true;
         el('refStatus').textContent = 'Uploading...';
         try {
-          const res = await fetch('/v1/files/upload', { method: 'POST', body: fd });
+          const res = await fetch('/v1/files/upload', { method: 'POST', headers: { 'X-API-Key': (el('apiKey') ? el('apiKey').value.trim() : '') }, body: fd });
           const text = await res.text();
           let data = null;
           try { data = text ? JSON.parse(text) : null; } catch (_) { data = text; }
@@ -623,6 +672,14 @@ async def playground():
       el('hardware').addEventListener('change', renderModelSelect);
       el('model').addEventListener('change', renderModelMeta);
 
+      const savedApiKey = window.localStorage.getItem('inference_server_api_key') || '';
+      if (el('apiKey')) {
+        el('apiKey').value = savedApiKey;
+        el('apiKey').addEventListener('input', () => {
+          window.localStorage.setItem('inference_server_api_key', el('apiKey').value || '');
+        });
+      }
+
       loadCatalog();
     </script>
   </body>
@@ -686,7 +743,7 @@ async def health_detailed():
 
 
 @app.get("/v1/system/status")
-async def system_status(current_user=Depends(get_current_user)):
+async def system_status(principal=Depends(get_current_api_key)):
     from app.db import engine
     from app.models.model_loader import model_loader
     import redis

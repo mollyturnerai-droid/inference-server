@@ -64,3 +64,16 @@ class Prediction(Base):
 
     model = relationship("Model", back_populates="predictions")
     user = relationship("User", back_populates="predictions")
+
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    name = Column(String, nullable=False, index=True)
+    prefix = Column(String, nullable=False, index=True)
+    key_hash = Column(String, nullable=False, unique=True, index=True)
+    is_active = Column(Boolean, default=True)
+    is_admin = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_used_at = Column(DateTime, nullable=True)

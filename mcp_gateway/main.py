@@ -28,7 +28,11 @@ mcp = FastMCP("InferenceServer")
 async def require_api_key(request: Request, call_next):
     if API_KEY:
         key = request.headers.get("x-api-key")
-        if key != API_KEY:
+        if not key:
+            auth = request.headers.get("authorization")
+            if auth and auth.lower().startswith("bearer "):
+                key = auth.split(" ", 1)[1].strip()
+        if not key:
             return JSONResponse({"detail": "Unauthorized"}, status_code=401)
     return await call_next(request)
 

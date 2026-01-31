@@ -1,9 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional
-from app.db import get_db, Model, User
+from app.db import get_db, Model
 from app.schemas import ModelCreate, ModelResponse, ModelList
-from app.services.auth import get_current_user, get_current_user_optional
 
 router = APIRouter(prefix="/models", tags=["Models"])
 
@@ -12,7 +10,6 @@ router = APIRouter(prefix="/models", tags=["Models"])
 async def create_model(
     model: ModelCreate,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """Create a new model"""
     db_model = Model(
@@ -23,7 +20,7 @@ async def create_model(
         model_path=model.model_path,
         input_schema=model.input_schema,
         hardware=model.hardware,
-        owner_id=current_user.id if current_user else None
+        owner_id=None
     )
 
     db.add(db_model)
@@ -57,16 +54,12 @@ async def get_model(model_id: str, db: Session = Depends(get_db)):
 @router.delete("/{model_id}")
 async def delete_model(
     model_id: str,
-    db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional)
+    db: Session = Depends(get_db)
 ):
     """Delete a model"""
     model = db.query(Model).filter(Model.id == model_id).first()
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
-
-    if current_user and model.owner_id and model.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to delete this model")
 
     db.delete(model)
     db.commit()
