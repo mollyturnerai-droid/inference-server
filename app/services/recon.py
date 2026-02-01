@@ -141,7 +141,7 @@ def _upsert_catalog_entry(
     source_url: Optional[str],
     schema_source: Optional[str],
     schema_version: Optional[str],
-    metadata: Dict[str, Any],
+    metadata_json: Dict[str, Any],
 ):
     now = datetime.utcnow()
     row = db.query(CatalogModelEntry).filter(CatalogModelEntry.id == model_id).first()
@@ -164,7 +164,7 @@ def _upsert_catalog_entry(
     row.source_url = source_url
     row.schema_source = schema_source
     row.schema_version = schema_version
-    row.metadata = metadata
+    row.metadata_json = metadata_json
     row.is_active = True
     row.updated_at = now
     row.last_synced_at = now
@@ -217,7 +217,7 @@ def _sync_huggingface(db, limit: int) -> int:
             source_url=f"https://huggingface.co/{model_id}",
             schema_source=schema_source,
             schema_version=item.get("sha"),
-            metadata={"pipeline_tag": pipeline_tag},
+            metadata_json={"pipeline_tag": pipeline_tag},
         )
         count += 1
     return count
@@ -304,7 +304,7 @@ def _sync_replicate(db, limit: int) -> int:
             source_url=item.get("url"),
             schema_source="openapi" if schema else None,
             schema_version=version_id,
-            metadata={"latest_version": version_id},
+            metadata_json={"latest_version": version_id},
         )
         count += 1
     return count

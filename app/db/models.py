@@ -99,7 +99,7 @@ class CatalogModelEntry(Base):
     source_url = Column(String, nullable=True)
     schema_source = Column(String, nullable=True)
     schema_version = Column(String, nullable=True)
-    metadata = Column(JSON, default=dict)
+    metadata_json = Column(JSON, default=dict)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
