@@ -19,10 +19,6 @@ except Exception as e:
     print("Database will be initialized when connection is available")
 
 
-@app.on_event("startup")
-def _start_recon():
-    start_recon_scheduler()
-
 def _get_client_ip(request: Request) -> str:
     if settings.TRUST_PROXY_HEADERS:
         forwarded = request.headers.get("x-forwarded-for")
@@ -43,6 +39,11 @@ app = FastAPI(
     description="A full-featured ML inference engine",
     version="1.0.0"
 )
+
+
+@app.on_event("startup")
+def _start_recon():
+    start_recon_scheduler()
 
 # Add rate limiting
 app.state.limiter = limiter
