@@ -1,13 +1,14 @@
+
 import { useMemo, useState } from 'react'
 import './App.css'
 
 type NavKey =
   | 'dashboard'
-  | 'api-keys'
-  | 'models'
   | 'catalog'
+  | 'models'
   | 'predictions'
   | 'files'
+  | 'api-keys'
   | 'system'
 
 type ApiKeyItem = {
@@ -29,7 +30,30 @@ type ModelItem = {
   hardware: string
   created_at: string
   updated_at: string
-  owner_id?: string | null
+}
+
+type CatalogModel = {
+  id: string
+  name: string
+  description: string
+  model_type: string
+  model_path: string
+  size: string
+  vram_gb?: number | null
+  recommended_hardware: string
+  tags?: string[]
+  downloads?: string | null
+  license?: string | null
+  input_schema?: Record<string, unknown>
+  source?: string | null
+  source_url?: string | null
+  schema_source?: string | null
+}
+
+type CatalogResponse = {
+  categories: string[]
+  total_models: number
+  models: CatalogModel[]
 }
 
 type PredictionItem = {
@@ -46,24 +70,13 @@ type PredictionItem = {
   webhook?: string | null
 }
 
-type CatalogModel = {
-  id: string
-  name: string
-  description: string
-  model_type: string
-  model_path: string
-  size: string
-  vram_gb?: number | null
-  recommended_hardware: string
-  tags?: string[]
-  downloads?: string | null
-  license?: string | null
-}
-
-type CatalogResponse = {
-  categories: string[]
-  total_models: number
-  models: CatalogModel[]
+type ModelSchemaField = {
+  type: string
+  description?: string | null
+  default?: unknown
+  minimum?: number | null
+  maximum?: number | null
+  enum?: unknown[] | null
 }
 
 const DEFAULT_BASE_URL = 'http://localhost:8000'
@@ -83,15 +96,30 @@ const parseJson = <T,>(raw: string, fallback: T): T => {
 
 const pretty = (value: unknown) => JSON.stringify(value, null, 2)
 
-const navItems: { key: NavKey; label: string; hint: string }[] = [
-  { key: 'dashboard', label: 'Dashboard', hint: 'Status + health' },
-  { key: 'api-keys', label: 'API Keys', hint: 'Create and revoke' },
-  { key: 'models', label: 'Models', hint: 'Mount and manage' },
-  { key: 'catalog', label: 'Catalog', hint: 'Browse and admin' },
-  { key: 'predictions', label: 'Predictions', hint: 'Run and observe' },
-  { key: 'files', label: 'Files', hint: 'Upload artifacts' },
-  { key: 'system', label: 'System', hint: 'Raw endpoints' },
-]
+const toSchemaField = (raw: unknown): ModelSchemaField | null => {
+  if (!raw || typeof raw !== 'object') return null
+  const field = raw as ModelSchemaField
+  if (!field.type) return null
+  return field
+}
+
+const coerceValue = (type: string, value: string) => {
+  if (type === 'integer') {
+    const parsed = Number.parseInt(value, 10)
+    return Number.isNaN(parsed) ? value : parsed
+  }
+  if (type === 'number') {
+    const parsed = Number.parseFloat(value)
+    return Number.isNaN(parsed) ? value : parsed
+  }
+  if (type === 'boolean') {
+    return value === 'true'
+  }
+  return value
+}
+
+const shorten = (value: string, length = 6) =>
+  value.length <= length ? value : `${value.slice(0, length)}…`
 
 function App() {
   const [active, setActive] = useState<NavKey>('dashboard')
@@ -121,7 +149,7 @@ function App() {
   const api = async function apiRequest<T>(
     path: string,
     init?: RequestInit,
-    options?: { allowRaw?: boolean; catalogAdmin?: boolean },
+    options?: { catalogAdmin?: boolean },
   ): Promise<T> {
     const url = `${baseUrl.replace(/\/$/, '')}${path}`
     const extraHeaders: Record<string, string> = {}
@@ -139,9 +167,6 @@ function App() {
     const text = await response.text()
     if (!response.ok) {
       throw new Error(`${response.status} ${response.statusText}: ${text}`)
-    }
-    if (options?.allowRaw) {
-      return text as T
     }
     return (text ? JSON.parse(text) : {}) as T
   }
@@ -180,43 +205,21 @@ function App() {
   const [newKeyResult, setNewKeyResult] = useState<string>('')
 
   const [models, setModels] = useState<ModelItem[]>([])
-  const [modelDraft, setModelDraft] = useState(
-    pretty({
-      name: 'example-model',
-      description: 'Example model',
-      model_type: 'text-generation',
-      version: '1.0.0',
-      model_path: 'gpt2',
-      input_schema: {
-        prompt: { type: 'string', description: 'Prompt' },
-        max_length: { type: 'integer', default: 64, minimum: 1, maximum: 512 },
-      },
-      hardware: 'cpu',
-    }),
-  )
-
   const [catalog, setCatalog] = useState<CatalogResponse | null>(null)
   const [catalogCategory, setCatalogCategory] = useState('')
   const [catalogHardware, setCatalogHardware] = useState('')
   const [catalogSize, setCatalogSize] = useState('')
   const [catalogMountId, setCatalogMountId] = useState('')
-  const [catalogAdminDraft, setCatalogAdminDraft] = useState(
-    pretty({
-      id: 'catalog-id',
-      name: 'Model name',
-      description: 'Description',
-      model_type: 'text-generation',
-      model_path: 'gpt2',
-      size: 'small',
-      vram_gb: 8,
-      recommended_hardware: 'gpu',
-      tags: ['demo'],
-      downloads: null,
-      license: null,
-    }),
+  const [reconStatus, setReconStatus] = useState<Record<string, unknown> | null>(
+    null,
   )
+  const [reconSources, setReconSources] = useState('huggingface,replicate')
 
-  const [predictions, setPredictions] = useState<PredictionItem[]>([])
+  const [selectedModelId, setSelectedModelId] = useState('')
+  const [predictionInput, setPredictionInput] = useState<Record<string, unknown>>(
+    { prompt: 'Hello world', max_length: 32 },
+  )
+  const [predictionWebhook, setPredictionWebhook] = useState('')
   const [predictionDraft, setPredictionDraft] = useState(
     pretty({
       model_id: '',
@@ -224,17 +227,26 @@ function App() {
       webhook: null,
     }),
   )
+  const [predictions, setPredictions] = useState<PredictionItem[]>([])
+  const [predictionResult, setPredictionResult] = useState<string>('')
   const [predictionDetail, setPredictionDetail] = useState<string>('')
 
   const [fileUploadResult, setFileUploadResult] = useState<string>('')
   const [filePath, setFilePath] = useState('')
+
+  const selectedModel = models.find((m) => m.id === selectedModelId) || null
 
   const loadDashboard = () =>
     withBusy(async () => {
       const health = await api<Record<string, unknown>>('/health')
       const detailed = await api<Record<string, unknown>>('/health/detailed')
       const system = await api<Record<string, unknown>>('/v1/system/status')
-      const db = await api<Record<string, unknown>>('/v1/system/db-info')
+      let db: Record<string, unknown> | null = null
+      try {
+        db = await api<Record<string, unknown>>('/v1/system/db-info')
+      } catch {
+        db = null
+      }
       setDashboard({ health, detailed, system, db })
       setLog('Dashboard loaded')
     })
@@ -273,22 +285,37 @@ function App() {
     withBusy(async () => {
       const result = await api<{ models: ModelItem[] }>('/v1/models/')
       setModels(result.models)
-      setLog('Models loaded')
-    })
-
-  const createModel = () =>
-    withBusy(async () => {
-      const body = parseJson(modelDraft, null)
-      if (!body) {
-        setLog('Model JSON is invalid')
-        return
+      if (!selectedModelId && result.models.length > 0) {
+        setSelectedModelId(result.models[0].id)
+        const schema = result.models[0].input_schema || {}
+        const nextInput: Record<string, unknown> = {}
+        Object.entries(schema).forEach(([key, raw]) => {
+          const field = toSchemaField(raw)
+          if (!field) return
+          if (field.default !== undefined && field.default !== null) {
+            nextInput[key] = field.default
+          } else if (field.type === 'boolean') {
+            nextInput[key] = false
+          } else if (field.type === 'integer' || field.type === 'number') {
+            nextInput[key] = field.minimum ?? 0
+          } else if (field.type === 'array') {
+            nextInput[key] = []
+          } else {
+            nextInput[key] = ''
+          }
+        })
+        if (Object.keys(nextInput).length > 0) {
+          setPredictionInput(nextInput)
+          setPredictionDraft(
+            pretty({
+              model_id: result.models[0].id,
+              input: nextInput,
+              webhook: null,
+            }),
+          )
+        }
       }
-      const result = await api<ModelItem>('/v1/models/', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      })
-      setLog(`Model created: ${result.id}`)
-      await loadModels()
+      setLog('Models refreshed')
     })
 
   const deleteModel = (id: string) =>
@@ -308,7 +335,7 @@ function App() {
         `/v1/catalog/models${query ? `?${query}` : ''}`,
       )
       setCatalog(result)
-      setLog('Catalog loaded')
+      setLog('Catalog refreshed')
     })
 
   const mountCatalog = () =>
@@ -326,34 +353,28 @@ function App() {
       await loadModels()
     })
 
-  const upsertCatalogModel = () =>
+  const loadReconStatus = () =>
     withBusy(async () => {
-      const body = parseJson(catalogAdminDraft, null)
-      if (!body) {
-        setLog('Catalog JSON is invalid')
-        return
-      }
-      const result = await api<CatalogModel>('/v1/catalog/admin/models', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      }, { catalogAdmin: true })
-      setLog(`Catalog saved: ${result.id}`)
-      await loadCatalog()
-    })
-
-  const deleteCatalogModel = (id: string) =>
-    withBusy(async () => {
-      await api(`/v1/catalog/admin/models/${id}`, { method: 'DELETE' }, { catalogAdmin: true })
-      await loadCatalog()
-    })
-
-  const loadPredictions = () =>
-    withBusy(async () => {
-      const result = await api<{ predictions: PredictionItem[] }>(
-        '/v1/predictions/',
+      const status = await api<Record<string, unknown>>(
+        '/v1/catalog/recon/status',
+        undefined,
+        { catalogAdmin: true },
       )
-      setPredictions(result.predictions)
-      setLog('Predictions loaded')
+      setReconStatus(status)
+      setLog('Recon status loaded')
+    })
+
+  const runRecon = () =>
+    withBusy(async () => {
+      const query = reconSources ? `?sources=${encodeURIComponent(reconSources)}` : ''
+      const status = await api<Record<string, unknown>>(
+        `/v1/catalog/recon${query}`,
+        { method: 'POST' },
+        { catalogAdmin: true },
+      )
+      setReconStatus(status)
+      setLog('Recon triggered')
+      await loadCatalog()
     })
 
   const createPrediction = () =>
@@ -367,8 +388,17 @@ function App() {
         method: 'POST',
         body: JSON.stringify(body),
       })
+      setPredictionResult(pretty(result))
       setLog(`Prediction created: ${result.id}`)
-      await loadPredictions()
+    })
+
+  const loadPredictions = () =>
+    withBusy(async () => {
+      const result = await api<{ predictions: PredictionItem[] }>(
+        '/v1/predictions/',
+      )
+      setPredictions(result.predictions)
+      setLog('Predictions loaded')
     })
 
   const cancelPrediction = (id: string) =>
@@ -386,7 +416,8 @@ function App() {
       const result = await api<PredictionItem>(
         `/v1/predictions/${predictionDetail}`,
       )
-      setLog(pretty(result))
+      setPredictionResult(pretty(result))
+      setLog(`Prediction loaded: ${result.id}`)
     })
 
   const uploadFile = async (file: File) => {
@@ -423,375 +454,58 @@ function App() {
     window.open(url, '_blank', 'noopener,noreferrer')
   }
 
-  const renderDashboard = () => (
-    <section className="panel">
-      <header>
-        <h2>Dashboard</h2>
-        <p>Status overview and health checks.</p>
-      </header>
-      <div className="actions">
-        <button onClick={loadDashboard} disabled={busy}>
-          Refresh
-        </button>
-      </div>
-      <div className="grid two">
-        <article>
-          <h3>Health</h3>
-          <pre>{dashboard.health ? pretty(dashboard.health) : 'No data'}</pre>
-        </article>
-        <article>
-          <h3>Detailed</h3>
-          <pre>
-            {dashboard.detailed ? pretty(dashboard.detailed) : 'No data'}
-          </pre>
-        </article>
-      </div>
-      <article>
-        <h3>System</h3>
-        <pre>{dashboard.system ? pretty(dashboard.system) : 'No data'}</pre>
-      </article>
-      <article>
-        <h3>Database</h3>
-        <pre>{dashboard.db ? pretty(dashboard.db) : 'No data'}</pre>
-      </article>
-      {error && (
-        <article>
-          <h3>Last error</h3>
-          <pre>{error}</pre>
-        </article>
-      )}
-    </section>
-  )
-
-  const renderApiKeys = () => (
-    <section className="panel">
-      <header>
-        <h2>API Keys</h2>
-        <p>Create or revoke API keys. Store new keys securely.</p>
-      </header>
-      <div className="actions">
-        <button onClick={loadApiKeys} disabled={busy}>
-          Refresh
-        </button>
-      </div>
-      <div className="grid two">
-        <article>
-          <h3>Create key</h3>
-          <label>
-            Name
-            <input
-              value={newKeyName}
-              onChange={(e) => setNewKeyName(e.target.value)}
-            />
-          </label>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={newKeyAdmin}
-              onChange={(e) => setNewKeyAdmin(e.target.checked)}
-            />
-            Admin privileges
-          </label>
-          <button onClick={createApiKey} disabled={busy}>
-            Create API key
-          </button>
-          <pre>{newKeyResult || 'New key response appears here.'}</pre>
-        </article>
-        <article>
-          <h3>Active keys</h3>
-          <div className="table">
-            {apiKeys.length === 0 && <p>No keys yet.</p>}
-            {apiKeys.map((key) => (
-              <div key={key.id} className="row">
-                <div>
-                  <strong>{key.name}</strong>
-                  <span className="muted">({key.prefix})</span>
-                </div>
-                <div className="row-meta">
-                  <span>{key.is_admin ? 'admin' : 'standard'}</span>
-                  <span>{key.is_active ? 'active' : 'revoked'}</span>
-                </div>
-                <button
-                  onClick={() => revokeApiKey(key.id)}
-                  disabled={busy || !key.is_active}
-                >
-                  Revoke
-                </button>
-              </div>
-            ))}
-          </div>
-        </article>
-      </div>
-    </section>
-  )
-
-  const renderModels = () => (
-    <section className="panel">
-      <header>
-        <h2>Models</h2>
-        <p>Manage mounted models.</p>
-      </header>
-      <div className="actions">
-        <button onClick={loadModels} disabled={busy}>
-          Refresh
-        </button>
-      </div>
-      <div className="grid two">
-        <article>
-          <h3>Create model</h3>
-          <textarea
-            value={modelDraft}
-            onChange={(e) => setModelDraft(e.target.value)}
-          />
-          <button onClick={createModel} disabled={busy}>
-            Create model
-          </button>
-        </article>
-        <article>
-          <h3>Mounted models</h3>
-          <div className="table">
-            {models.length === 0 && <p>No models yet.</p>}
-            {models.map((model) => (
-              <div key={model.id} className="row">
-                <div>
-                  <strong>{model.name}</strong>
-                  <span className="muted">{model.model_type}</span>
-                </div>
-                <div className="row-meta">
-                  <span>{model.hardware}</span>
-                  <span>{model.version}</span>
-                </div>
-                <button onClick={() => deleteModel(model.id)} disabled={busy}>
-                  Delete
-                </button>
-              </div>
-            ))}
-          </div>
-        </article>
-      </div>
-    </section>
-  )
-
-  const renderCatalog = () => (
-    <section className="panel">
-      <header>
-        <h2>Catalog</h2>
-        <p>Browse available models and mount them.</p>
-      </header>
-      <div className="actions">
-        <button onClick={loadCatalog} disabled={busy}>
-          Refresh
-        </button>
-      </div>
-      <div className="filters">
-        <input
-          placeholder="Category"
-          value={catalogCategory}
-          onChange={(e) => setCatalogCategory(e.target.value)}
-        />
-        <input
-          placeholder="Size"
-          value={catalogSize}
-          onChange={(e) => setCatalogSize(e.target.value)}
-        />
-        <input
-          placeholder="Hardware"
-          value={catalogHardware}
-          onChange={(e) => setCatalogHardware(e.target.value)}
-        />
-      </div>
-      <div className="grid two">
-        <article>
-          <h3>Mount from catalog</h3>
-          <input
-            placeholder="Catalog ID"
-            value={catalogMountId}
-            onChange={(e) => setCatalogMountId(e.target.value)}
-          />
-          <button onClick={mountCatalog} disabled={busy}>
-            Mount model
-          </button>
-          <pre>{catalog ? `Total: ${catalog.total_models}` : 'No data'}</pre>
-        </article>
-        <article>
-          <h3>Admin: add/update catalog</h3>
-          <textarea
-            value={catalogAdminDraft}
-            onChange={(e) => setCatalogAdminDraft(e.target.value)}
-          />
-          <button onClick={upsertCatalogModel} disabled={busy}>
-            Save catalog model
-          </button>
-        </article>
-      </div>
-      <article>
-        <h3>Catalog models</h3>
-        <div className="table">
-          {!catalog?.models?.length && <p>No catalog results.</p>}
-          {catalog?.models?.map((item) => (
-            <div key={item.id} className="row">
-              <div>
-                <strong>{item.name}</strong>
-                <span className="muted">{item.model_type}</span>
-              </div>
-              <div className="row-meta">
-                <span>{item.size}</span>
-                <span>{item.recommended_hardware}</span>
-              </div>
-              <button onClick={() => deleteCatalogModel(item.id)} disabled={busy}>
-                Delete
-              </button>
-            </div>
-          ))}
-        </div>
-      </article>
-    </section>
-  )
-
-  const renderPredictions = () => (
-    <section className="panel">
-      <header>
-        <h2>Predictions</h2>
-        <p>Run and monitor predictions.</p>
-      </header>
-      <div className="actions">
-        <button onClick={loadPredictions} disabled={busy}>
-          Refresh
-        </button>
-      </div>
-      <div className="grid two">
-        <article>
-          <h3>Create prediction</h3>
-          <textarea
-            value={predictionDraft}
-            onChange={(e) => setPredictionDraft(e.target.value)}
-          />
-          <button onClick={createPrediction} disabled={busy}>
-            Create prediction
-          </button>
-          <div className="row">
-            <input
-              placeholder="Prediction ID"
-              value={predictionDetail}
-              onChange={(e) => setPredictionDetail(e.target.value)}
-            />
-            <button onClick={loadPrediction} disabled={busy}>
-              Load
-            </button>
-          </div>
-        </article>
-        <article>
-          <h3>Recent predictions</h3>
-          <div className="table">
-            {predictions.length === 0 && <p>No predictions yet.</p>}
-            {predictions.map((prediction) => (
-              <div key={prediction.id} className="row">
-                <div>
-                  <strong>{prediction.id}</strong>
-                  <span className="muted">{prediction.model_id}</span>
-                </div>
-                <div className="row-meta">
-                  <span>{prediction.status}</span>
-                  <span>{prediction.created_at}</span>
-                </div>
-                <button
-                  onClick={() => cancelPrediction(prediction.id)}
-                  disabled={busy}
-                >
-                  Cancel
-                </button>
-              </div>
-            ))}
-          </div>
-        </article>
-      </div>
-    </section>
-  )
-
-  const renderFiles = () => (
-    <section className="panel">
-      <header>
-        <h2>Files</h2>
-        <p>Upload files and retrieve by path.</p>
-      </header>
-      <div className="grid two">
-        <article>
-          <h3>Upload</h3>
-          <input type="file" onChange={handleUpload} />
-          <pre>{fileUploadResult || 'Upload response appears here.'}</pre>
-        </article>
-        <article>
-          <h3>Open file by path</h3>
-          <input
-            placeholder="path/to/file"
-            value={filePath}
-            onChange={(e) => setFilePath(e.target.value)}
-          />
-          <button onClick={openFile} disabled={busy}>
-            Open file
-          </button>
-        </article>
-      </div>
-    </section>
-  )
-
-  const renderSystem = () => (
-    <section className="panel">
-      <header>
-        <h2>System</h2>
-        <p>Raw endpoint calls and quick checks.</p>
-      </header>
-      <div className="actions">
-        <button onClick={loadDashboard} disabled={busy}>
-          Refresh system + health
-        </button>
-      </div>
-      <article>
-        <h3>System status</h3>
-        <pre>{dashboard.system ? pretty(dashboard.system) : 'No data'}</pre>
-      </article>
-      <article>
-        <h3>Logs</h3>
-        <pre>{log || 'No logs yet.'}</pre>
-      </article>
-      {error && (
-        <article>
-          <h3>Last error</h3>
-          <pre>{error}</pre>
-        </article>
-      )}
-    </section>
-  )
-
   return (
-    <div className="app-shell">
+    <div className="admin-shell">
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">∞</span>
           <div>
             <h1>Inference Admin</h1>
-            <p>Single control plane for your server.</p>
+            <p>Modern control plane</p>
           </div>
         </div>
-        <div className="nav">
-          {navItems.map((item) => (
+        <nav className="nav">
+          {[
+            ['dashboard', 'Dashboard'],
+            ['catalog', 'Catalog'],
+            ['models', 'Models'],
+            ['predictions', 'Predictions'],
+            ['files', 'Files'],
+            ['api-keys', 'API Keys'],
+            ['system', 'System'],
+          ].map(([key, label]) => (
             <button
-              key={item.key}
-              className={active === item.key ? 'active' : ''}
-              onClick={() => setActive(item.key)}
+              key={key}
+              className={active === key ? 'active' : ''}
+              onClick={() => setActive(key as NavKey)}
             >
-              <span>{item.label}</span>
-              <small>{item.hint}</small>
+              {label}
             </button>
           ))}
-        </div>
+        </nav>
       </aside>
-      <main>
+
+      <main className="main">
+        <header className="topbar">
+          <div>
+            <p className="eyebrow">Admin Console</p>
+            <h1>{active.replace('-', ' ')}</h1>
+          </div>
+          <div className="topbar-actions">
+            <button onClick={loadCatalog} disabled={busy}>
+              Refresh catalog
+            </button>
+            <button onClick={loadModels} disabled={busy}>
+              Refresh models
+            </button>
+          </div>
+        </header>
+
         <section className="panel config">
-          <header>
-            <h2>Runtime Configuration</h2>
-            <p>Set your server URL and API keys. Stored locally in this browser.</p>
-          </header>
+          <div>
+            <h2>Connection</h2>
+            <p>Set server URL + admin credentials.</p>
+          </div>
           <div className="config-grid">
             <label>
               API base URL
@@ -806,7 +520,7 @@ function App() {
               <input
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder="Leave empty for public endpoints"
+                placeholder="Paste master key"
               />
             </label>
             <label>
@@ -814,21 +528,523 @@ function App() {
               <input
                 value={catalogToken}
                 onChange={(e) => setCatalogToken(e.target.value)}
-                placeholder="Required for catalog admin APIs"
+                placeholder="Required for recon/admin"
               />
             </label>
             <button onClick={persist} disabled={busy}>
-              Save settings
+              Save
             </button>
           </div>
         </section>
-        {active === 'dashboard' && renderDashboard()}
-        {active === 'api-keys' && renderApiKeys()}
-        {active === 'models' && renderModels()}
-        {active === 'catalog' && renderCatalog()}
-        {active === 'predictions' && renderPredictions()}
-        {active === 'files' && renderFiles()}
-        {active === 'system' && renderSystem()}
+        {active === 'dashboard' && (
+          <section className="grid two">
+            <div className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Health</h2>
+                  <p>API status.</p>
+                </div>
+                <button onClick={loadDashboard} disabled={busy}>
+                  Refresh
+                </button>
+              </div>
+              <pre>{dashboard.health ? pretty(dashboard.health) : 'No data'}</pre>
+            </div>
+            <div className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Detailed</h2>
+                  <p>Database, Redis, GPU.</p>
+                </div>
+              </div>
+              <pre>{dashboard.detailed ? pretty(dashboard.detailed) : 'No data'}</pre>
+            </div>
+            <div className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>System</h2>
+                </div>
+              </div>
+              <pre>{dashboard.system ? pretty(dashboard.system) : 'No data'}</pre>
+            </div>
+            <div className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Database</h2>
+                </div>
+              </div>
+              <pre>{dashboard.db ? pretty(dashboard.db) : 'No data'}</pre>
+            </div>
+          </section>
+        )}
+        {active === 'catalog' && (
+          <section className="grid two">
+            <div className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Catalog</h2>
+                  <p>Browse and mount models.</p>
+                </div>
+                <button onClick={loadCatalog} disabled={busy}>
+                  Refresh
+                </button>
+              </div>
+              <div className="filters">
+                <input
+                  placeholder="Category"
+                  value={catalogCategory}
+                  onChange={(e) => setCatalogCategory(e.target.value)}
+                />
+                <input
+                  placeholder="Size"
+                  value={catalogSize}
+                  onChange={(e) => setCatalogSize(e.target.value)}
+                />
+                <input
+                  placeholder="Hardware"
+                  value={catalogHardware}
+                  onChange={(e) => setCatalogHardware(e.target.value)}
+                />
+              </div>
+              <div className="recon-bar">
+                <input
+                  placeholder="Recon sources (huggingface,replicate)"
+                  value={reconSources}
+                  onChange={(e) => setReconSources(e.target.value)}
+                />
+                <button onClick={runRecon} disabled={busy}>
+                  Run recon
+                </button>
+                <button onClick={loadReconStatus} disabled={busy}>
+                  Status
+                </button>
+              </div>
+              {reconStatus && <pre>{pretty(reconStatus)}</pre>}
+              <div className="mount">
+                <input
+                  placeholder="Catalog ID"
+                  value={catalogMountId}
+                  onChange={(e) => setCatalogMountId(e.target.value)}
+                />
+                <button onClick={mountCatalog} disabled={busy}>
+                  Mount
+                </button>
+              </div>
+              <div className="list">
+                {!catalog?.models?.length && (
+                  <p className="muted">No catalog data.</p>
+                )}
+                {catalog?.models?.map((item) => (
+                  <button
+                    key={item.id}
+                    className="list-item"
+                    onClick={() => setCatalogMountId(item.id)}
+                  >
+                    <div>
+                      <strong>{item.name}</strong>
+                      <span>{item.model_type}</span>
+                    </div>
+                    <span className="pill">{item.size}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Selected schema</h2>
+                  <p>Server-curated input schema.</p>
+                </div>
+              </div>
+              <pre>
+                {selectedModel ? pretty(selectedModel.input_schema) : 'Select a model'}
+              </pre>
+            </div>
+          </section>
+        )}
+        {active === 'models' && (
+          <section className="panel">
+            <div className="panel-header">
+              <div>
+                <h2>Mounted models</h2>
+                <p>Unload with one click.</p>
+              </div>
+              <button onClick={loadModels} disabled={busy}>
+                Refresh
+              </button>
+            </div>
+            <div className="list">
+              {!models.length && <p className="muted">No models mounted.</p>}
+              {models.map((model) => (
+                <div key={model.id} className="list-row">
+                  <div>
+                    <strong>{model.name}</strong>
+                    <span>{model.model_type}</span>
+                  </div>
+                  <div className="row-actions">
+                    <span className="pill">{model.hardware}</span>
+                    <button onClick={() => deleteModel(model.id)} disabled={busy}>
+                      Unmount
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+        {active === 'predictions' && (
+          <section className="grid two">
+            <div className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Run prediction</h2>
+                  <p>Adapted to model schema.</p>
+                </div>
+              </div>
+              <div className="prediction-select">
+                <label>
+                  Model
+                  <select
+                    value={selectedModelId}
+                    onChange={(e) => {
+                      const nextId = e.target.value
+                      setSelectedModelId(nextId)
+                      const nextModel = models.find((m) => m.id === nextId)
+                      if (!nextModel) return
+                      const schema = nextModel.input_schema || {}
+                      const nextInput: Record<string, unknown> = {}
+                      Object.entries(schema).forEach(([key, raw]) => {
+                        const field = toSchemaField(raw)
+                        if (!field) return
+                        if (field.default !== undefined && field.default !== null) {
+                          nextInput[key] = field.default
+                        } else if (field.type === 'boolean') {
+                          nextInput[key] = false
+                        } else if (
+                          field.type === 'integer' ||
+                          field.type === 'number'
+                        ) {
+                          nextInput[key] = field.minimum ?? 0
+                        } else if (field.type === 'array') {
+                          nextInput[key] = []
+                        } else {
+                          nextInput[key] = ''
+                        }
+                      })
+                      setPredictionInput(nextInput)
+                      setPredictionDraft(
+                        pretty({
+                          model_id: nextId,
+                          input: nextInput,
+                          webhook: predictionWebhook ? predictionWebhook : null,
+                        }),
+                      )
+                    }}
+                  >
+                    <option value="">Select model</option>
+                    {models.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.name} ({shorten(model.id)})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="form-grid">
+                {(() => {
+                  if (!selectedModel) {
+                    return <p className="muted">Select a model to load inputs.</p>
+                  }
+                  const schema = selectedModel.input_schema || {}
+                  const entries = Object.entries(schema)
+                  if (!entries.length) {
+                    return <p className="muted">No input schema defined.</p>
+                  }
+                  return entries.map(([key, raw]) => {
+                    const field = toSchemaField(raw)
+                    if (!field) return null
+                    const value = predictionInput[key]
+                    const description = field.description || ''
+                    if (field.enum && field.enum.length > 0) {
+                      return (
+                        <label key={key}>
+                          {key}
+                          <select
+                            value={String(value ?? '')}
+                            onChange={(e) => {
+                              const next = { ...predictionInput, [key]: e.target.value }
+                              setPredictionInput(next)
+                              setPredictionDraft(
+                                pretty({
+                                  model_id: selectedModelId,
+                                  input: next,
+                                  webhook: predictionWebhook ? predictionWebhook : null,
+                                }),
+                              )
+                            }}
+                          >
+                            <option value="">Select</option>
+                            {field.enum.map((option) => (
+                              <option key={String(option)} value={String(option)}>
+                                {String(option)}
+                              </option>
+                            ))}
+                          </select>
+                          {description && <span className="hint">{description}</span>}
+                        </label>
+                      )
+                    }
+                    if (field.type === 'boolean') {
+                      return (
+                        <label key={key} className="toggle">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(value)}
+                            onChange={(e) => {
+                              const next = {
+                                ...predictionInput,
+                                [key]: e.target.checked,
+                              }
+                              setPredictionInput(next)
+                              setPredictionDraft(
+                                pretty({
+                                  model_id: selectedModelId,
+                                  input: next,
+                                  webhook: predictionWebhook ? predictionWebhook : null,
+                                }),
+                              )
+                            }}
+                          />
+                          {key}
+                          {description && <span className="hint">{description}</span>}
+                        </label>
+                      )
+                    }
+                    return (
+                      <label key={key}>
+                        {key}
+                        <input
+                          value={
+                            value === undefined || value === null ? '' : String(value)
+                          }
+                          onChange={(e) => {
+                            const nextValue = coerceValue(field.type, e.target.value)
+                            const next = { ...predictionInput, [key]: nextValue }
+                            setPredictionInput(next)
+                            setPredictionDraft(
+                              pretty({
+                                model_id: selectedModelId,
+                                input: next,
+                                webhook: predictionWebhook ? predictionWebhook : null,
+                              }),
+                            )
+                          }}
+                        />
+                        {description && <span className="hint">{description}</span>}
+                      </label>
+                    )
+                  })
+                })()}
+              </div>
+              <label>
+                Webhook (optional)
+                <input
+                  value={predictionWebhook}
+                  onChange={(e) => {
+                    const nextWebhook = e.target.value
+                    setPredictionWebhook(nextWebhook)
+                    setPredictionDraft(
+                      pretty({
+                        model_id: selectedModelId,
+                        input: predictionInput,
+                        webhook: nextWebhook ? nextWebhook : null,
+                      }),
+                    )
+                  }}
+                />
+              </label>
+              <label>
+                Raw JSON
+                <textarea
+                  value={predictionDraft}
+                  onChange={(e) => setPredictionDraft(e.target.value)}
+                />
+              </label>
+              <div className="row-actions">
+                <button onClick={createPrediction} disabled={busy}>
+                  Run
+                </button>
+                <input
+                  placeholder="Prediction ID"
+                  value={predictionDetail}
+                  onChange={(e) => setPredictionDetail(e.target.value)}
+                />
+                <button onClick={loadPrediction} disabled={busy}>
+                  Load
+                </button>
+              </div>
+              <pre>{predictionResult || 'Results appear here.'}</pre>
+            </div>
+            <div className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Recent predictions</h2>
+                  <p>Status + cancel.</p>
+                </div>
+                <button onClick={loadPredictions} disabled={busy}>
+                  Refresh
+                </button>
+              </div>
+              <div className="list">
+                {!predictions.length && <p className="muted">No predictions yet.</p>}
+                {predictions.map((prediction) => (
+                  <div key={prediction.id} className="list-row">
+                    <div>
+                      <strong>{prediction.id}</strong>
+                      <span>{prediction.model_id}</span>
+                    </div>
+                    <div className="row-actions">
+                      <span className="pill">{prediction.status}</span>
+                      <button
+                        onClick={() => cancelPrediction(prediction.id)}
+                        disabled={busy}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+        {active === 'files' && (
+          <section className="grid two">
+            <div className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Upload</h2>
+                  <p>Upload artifacts.</p>
+                </div>
+              </div>
+              <input type="file" onChange={handleUpload} />
+              <pre>{fileUploadResult || 'Upload response appears here.'}</pre>
+            </div>
+            <div className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Open file</h2>
+                  <p>Fetch by path.</p>
+                </div>
+              </div>
+              <input
+                placeholder="path/to/file"
+                value={filePath}
+                onChange={(e) => setFilePath(e.target.value)}
+              />
+              <button onClick={openFile} disabled={busy}>
+                Open
+              </button>
+            </div>
+          </section>
+        )}
+        {active === 'api-keys' && (
+          <section className="grid two">
+            <div className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Create key</h2>
+                  <p>Generate API keys.</p>
+                </div>
+              </div>
+              <label>
+                Name
+                <input
+                  value={newKeyName}
+                  onChange={(e) => setNewKeyName(e.target.value)}
+                />
+              </label>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={newKeyAdmin}
+                  onChange={(e) => setNewKeyAdmin(e.target.checked)}
+                />
+                Admin privileges
+              </label>
+              <button onClick={createApiKey} disabled={busy}>
+                Create API key
+              </button>
+              <pre>{newKeyResult || 'New key response appears here.'}</pre>
+            </div>
+            <div className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Active keys</h2>
+                </div>
+                <button onClick={loadApiKeys} disabled={busy}>
+                  Refresh
+                </button>
+              </div>
+              <div className="list">
+                {!apiKeys.length && <p className="muted">No keys yet.</p>}
+                {apiKeys.map((key) => (
+                  <div key={key.id} className="list-row">
+                    <div>
+                      <strong>{key.name}</strong>
+                      <span>({key.prefix})</span>
+                    </div>
+                    <div className="row-actions">
+                      <span className="pill">
+                        {key.is_admin ? 'admin' : 'standard'}
+                      </span>
+                      <button
+                        onClick={() => revokeApiKey(key.id)}
+                        disabled={busy || !key.is_active}
+                      >
+                        Revoke
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+        {active === 'system' && (
+          <section className="panel">
+            <div className="panel-header">
+              <div>
+                <h2>System</h2>
+                <p>Quick checks.</p>
+              </div>
+              <button onClick={loadDashboard} disabled={busy}>
+                Refresh
+              </button>
+            </div>
+            <pre>{dashboard.system ? pretty(dashboard.system) : 'No data'}</pre>
+            {error && (
+              <div className="error">
+                <strong>Last error</strong>
+                <span>{error}</span>
+              </div>
+            )}
+          </section>
+        )}
+
+        <section className="panel footnote">
+          <div>
+            <h3>Log</h3>
+            <p>{log || 'No actions yet.'}</p>
+          </div>
+          {error && (
+            <div className="error">
+              <strong>Last error</strong>
+              <span>{error}</span>
+            </div>
+          )}
+        </section>
       </main>
     </div>
   )

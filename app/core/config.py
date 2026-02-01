@@ -67,6 +67,14 @@ class Settings(BaseSettings):
 
     CATALOG_PATH: str = "/tmp/model_catalog.json"
     CATALOG_ADMIN_TOKEN: Optional[str] = None
+    HF_API_TOKEN: Optional[str] = None
+    REPLICATE_API_TOKEN: Optional[str] = None
+    RECON_ENABLED: bool = True
+    RECON_ON_STARTUP: bool = True
+    RECON_INTERVAL_MINUTES: int = 1440
+    RECON_MAX_MODELS: int = 200
+    RECON_SOURCES: str = "huggingface,replicate"
+    RECON_TIMEOUT_SECONDS: int = 30
 
     class Config:
         env_file = ".env"

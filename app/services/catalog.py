@@ -1,7 +1,9 @@
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
-from app.schemas.model import ModelType
+from datetime import datetime
+from app.schemas.model import ModelType, ModelSchema
 from app.core.config import settings
+from app.db import SessionLocal, CatalogModelEntry
 import json
 import os
 
@@ -18,6 +20,13 @@ class CatalogModel(BaseModel):
     tags: List[str] = []
     downloads: Optional[str] = None
     license: Optional[str] = None
+    input_schema: Dict[str, ModelSchema] = {}
+    source: Optional[str] = None
+    source_id: Optional[str] = None
+    source_url: Optional[str] = None
+    schema_source: Optional[str] = None
+    schema_version: Optional[str] = None
+    last_synced_at: Optional[datetime] = None
 
 
 # Curated model catalog organized by type
@@ -662,34 +671,102 @@ def _save_catalog(catalog: Dict[str, List[CatalogModel]]):
     os.replace(tmp_path, path)
 
 
-def upsert_catalog_model(model: CatalogModel) -> CatalogModel:
-    catalog = _get_catalog()
-    model_id = model.id
-    for category, models in list(catalog.items()):
-        catalog[category] = [m for m in models if m.id != model_id]
+def _row_to_catalog_model(row: CatalogModelEntry) -> CatalogModel:
+    return CatalogModel(
+        id=row.id,
+        name=row.name,
+        description=row.description or "",
+        model_type=row.model_type,
+        model_path=row.model_path,
+        size=row.size or "medium",
+        vram_gb=row.vram_gb,
+        recommended_hardware=row.recommended_hardware or "cpu",
+        tags=row.tags or [],
+        downloads=row.downloads,
+        license=row.license,
+        input_schema=row.input_schema or {},
+        source=row.source,
+        source_id=row.source_id,
+        source_url=row.source_url,
+        schema_source=row.schema_source,
+        schema_version=row.schema_version,
+        last_synced_at=row.last_synced_at,
+    )
 
-    category = model.model_type.value
-    catalog.setdefault(category, []).append(model)
-    _save_catalog(catalog)
-    return model
+
+def _get_catalog_from_db() -> List[CatalogModel]:
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(CatalogModelEntry)
+            .filter(CatalogModelEntry.is_active == True)  # noqa: E712
+            .order_by(CatalogModelEntry.name.asc())
+            .all()
+        )
+        return [_row_to_catalog_model(row) for row in rows]
+    except Exception:
+        return []
+    finally:
+        db.close()
+
+
+def upsert_catalog_model(model: CatalogModel) -> CatalogModel:
+    db = SessionLocal()
+    try:
+        row = db.query(CatalogModelEntry).filter(CatalogModelEntry.id == model.id).first()
+        now = datetime.utcnow()
+        if not row:
+            row = CatalogModelEntry(
+                id=model.id,
+                created_at=now,
+                source=model.source or "manual",
+            )
+            db.add(row)
+        row.name = model.name
+        row.description = model.description
+        row.model_type = model.model_type
+        row.model_path = model.model_path
+        row.size = model.size
+        row.vram_gb = model.vram_gb
+        row.recommended_hardware = model.recommended_hardware
+        row.tags = model.tags
+        row.downloads = model.downloads
+        row.license = model.license
+        row.input_schema = model.input_schema or {}
+        row.source = model.source or row.source
+        row.source_id = model.source_id or row.source_id
+        row.source_url = model.source_url or row.source_url
+        row.schema_source = model.schema_source or row.schema_source
+        row.schema_version = model.schema_version or row.schema_version
+        row.updated_at = now
+        row.last_synced_at = model.last_synced_at or row.last_synced_at
+        row.is_active = True
+        db.commit()
+        db.refresh(row)
+        return _row_to_catalog_model(row)
+    finally:
+        db.close()
 
 
 def delete_catalog_model(model_id: str) -> bool:
-    catalog = _get_catalog()
-    removed = False
-    for category, models in list(catalog.items()):
-        filtered = [m for m in models if m.id != model_id]
-        if len(filtered) != len(models):
-            removed = True
-        catalog[category] = filtered
-
-    if removed:
-        _save_catalog(catalog)
-    return removed
+    db = SessionLocal()
+    try:
+        row = db.query(CatalogModelEntry).filter(CatalogModelEntry.id == model_id).first()
+        if not row:
+            return False
+        row.is_active = False
+        row.updated_at = datetime.utcnow()
+        db.commit()
+        return True
+    finally:
+        db.close()
 
 
 def get_all_catalog_models() -> List[CatalogModel]:
     """Get all models from the catalog"""
+    db_models = _get_catalog_from_db()
+    if db_models:
+        return db_models
     models = []
     for category_models in _get_catalog().values():
         models.extend(category_models)
@@ -698,11 +775,20 @@ def get_all_catalog_models() -> List[CatalogModel]:
 
 def get_catalog_models_by_type(model_type: str) -> List[CatalogModel]:
     """Get models from catalog filtered by type"""
+    db_models = _get_catalog_from_db()
+    if db_models:
+        return [m for m in db_models if m.model_type.value == model_type]
     return _get_catalog().get(model_type, [])
 
 
 def get_catalog_model_by_id(model_id: str) -> Optional[CatalogModel]:
     """Get a specific model from the catalog by ID"""
+    db_models = _get_catalog_from_db()
+    if db_models:
+        for model in db_models:
+            if model.id == model_id:
+                return model
+        return None
     for category_models in _get_catalog().values():
         for model in category_models:
             if model.id == model_id:
@@ -712,4 +798,7 @@ def get_catalog_model_by_id(model_id: str) -> Optional[CatalogModel]:
 
 def get_catalog_categories() -> List[str]:
     """Get all available model categories"""
+    db_models = _get_catalog_from_db()
+    if db_models:
+        return sorted({m.model_type.value for m in db_models})
     return list(_get_catalog().keys())

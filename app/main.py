@@ -8,6 +8,7 @@ from app.api import api_router
 from app.db import engine, Base, SessionLocal, ApiKey
 from app.core.config import settings
 from app.services.auth import get_current_api_key
+from app.services.recon import start_recon_scheduler
 from sqlalchemy.engine.url import make_url
 
 # Create database tables (only if database is available)
@@ -16,6 +17,11 @@ try:
 except Exception as e:
     print(f"Warning: Could not create database tables: {e}")
     print("Database will be initialized when connection is available")
+
+
+@app.on_event("startup")
+def _start_recon():
+    start_recon_scheduler()
 
 def _get_client_ip(request: Request) -> str:
     if settings.TRUST_PROXY_HEADERS:

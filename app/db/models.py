@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, JSON, Boolean, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, String, DateTime, JSON, Boolean, ForeignKey, Enum as SQLEnum, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -77,3 +77,30 @@ class ApiKey(Base):
     is_admin = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_used_at = Column(DateTime, nullable=True)
+
+
+class CatalogModelEntry(Base):
+    __tablename__ = "catalog_models"
+
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False, index=True)
+    description = Column(String, nullable=True)
+    model_type = Column(SQLEnum(ModelType), nullable=False, index=True)
+    model_path = Column(String, nullable=False)
+    size = Column(String, nullable=True)
+    vram_gb = Column(Float, nullable=True)
+    recommended_hardware = Column(String, nullable=True)
+    tags = Column(JSON, default=list)
+    downloads = Column(String, nullable=True)
+    license = Column(String, nullable=True)
+    input_schema = Column(JSON, default=dict)
+    source = Column(String, nullable=True)
+    source_id = Column(String, nullable=True, index=True)
+    source_url = Column(String, nullable=True)
+    schema_source = Column(String, nullable=True)
+    schema_version = Column(String, nullable=True)
+    metadata = Column(JSON, default=dict)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_synced_at = Column(DateTime, nullable=True)

@@ -14,6 +14,7 @@ from app.services.catalog import (
     upsert_catalog_model,
     delete_catalog_model,
 )
+from app.services.recon import run_recon, get_recon_status
 from app.db import get_db
 from app.db.models import Model
 from app.schemas.model import ModelType
@@ -49,11 +50,47 @@ class MountResponse(BaseModel):
     hardware: str
 
 
+class ReconStatusResponse(BaseModel):
+    in_progress: bool
+    last_started_at: Optional[datetime]
+    last_completed_at: Optional[datetime]
+    last_error: Optional[str]
+    last_counts: dict
+
+
 def _require_catalog_admin(x_catalog_admin_token: Optional[str] = Header(default=None)):
     if not settings.CATALOG_ADMIN_TOKEN:
         raise HTTPException(status_code=503, detail="Catalog admin token not configured")
     if x_catalog_admin_token != settings.CATALOG_ADMIN_TOKEN:
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+@router.get("/recon/status", response_model=ReconStatusResponse, dependencies=[Depends(_require_catalog_admin)])
+async def catalog_recon_status():
+    status = get_recon_status()
+    return ReconStatusResponse(
+        in_progress=status.in_progress,
+        last_started_at=status.last_started_at,
+        last_completed_at=status.last_completed_at,
+        last_error=status.last_error,
+        last_counts=status.last_counts,
+    )
+
+
+@router.post("/recon", response_model=ReconStatusResponse, dependencies=[Depends(_require_catalog_admin)])
+async def catalog_recon_run(
+    sources: Optional[str] = None,
+    limit: Optional[int] = None,
+):
+    selected = [s.strip() for s in sources.split(",")] if sources else None
+    status = run_recon(selected, limit)
+    return ReconStatusResponse(
+        in_progress=status.in_progress,
+        last_started_at=status.last_started_at,
+        last_completed_at=status.last_completed_at,
+        last_error=status.last_error,
+        last_counts=status.last_counts,
+    )
 
 
 @router.get("/models", response_model=CatalogResponse)
@@ -155,7 +192,7 @@ async def mount_catalog_model(
         model_type=catalog_model.model_type,
         version="1.0.0",
         model_path=catalog_model.model_path,
-        input_schema={},
+        input_schema=catalog_model.input_schema or {},
         hardware=hardware,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
