@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from enum import Enum
@@ -28,6 +28,8 @@ class ModelSchema(BaseModel):
 
 
 class ModelCreate(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     name: str = Field(..., description="Model name")
     description: Optional[str] = None
     model_type: ModelType
@@ -38,6 +40,8 @@ class ModelCreate(BaseModel):
 
 
 class ModelResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
+
     id: str
     name: str
     description: Optional[str] = None
@@ -49,10 +53,6 @@ class ModelResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     owner_id: Optional[str] = None
-
-    class Config:
-        from_attributes = True
-
 
 class ModelList(BaseModel):
     models: List[ModelResponse]

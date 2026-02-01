@@ -742,21 +742,39 @@ function App() {
                 </button>
               </div>
               <div className="filters">
-                <input
-                  placeholder="Category"
+                <select
                   value={catalogCategory}
                   onChange={(e) => setCatalogCategory(e.target.value)}
-                />
-                <input
-                  placeholder="Size"
+                >
+                  <option value="">All categories</option>
+                  {catalog?.categories?.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+                <select
                   value={catalogSize}
                   onChange={(e) => setCatalogSize(e.target.value)}
-                />
-                <input
-                  placeholder="Hardware"
+                >
+                  <option value="">All sizes</option>
+                  {['tiny', 'small', 'medium', 'large', 'xl'].map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </select>
+                <select
                   value={catalogHardware}
                   onChange={(e) => setCatalogHardware(e.target.value)}
-                />
+                >
+                  <option value="">All hardware</option>
+                  {['cpu', 'gpu'].map((hw) => (
+                    <option key={hw} value={hw}>
+                      {hw}
+                    </option>
+                  ))}
+                </select>
                 <select
                   value={catalogSort}
                   onChange={(e) =>
