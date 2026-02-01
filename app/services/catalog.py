@@ -27,6 +27,7 @@ class CatalogModel(BaseModel):
     schema_source: Optional[str] = None
     schema_version: Optional[str] = None
     last_synced_at: Optional[datetime] = None
+    latest_update: Optional[datetime] = None
 
 
 # Curated model catalog organized by type
@@ -672,6 +673,7 @@ def _save_catalog(catalog: Dict[str, List[CatalogModel]]):
 
 
 def _row_to_catalog_model(row: CatalogModelEntry) -> CatalogModel:
+    latest_update = row.last_synced_at or row.updated_at
     return CatalogModel(
         id=row.id,
         name=row.name,
@@ -691,6 +693,7 @@ def _row_to_catalog_model(row: CatalogModelEntry) -> CatalogModel:
         schema_source=row.schema_source,
         schema_version=row.schema_version,
         last_synced_at=row.last_synced_at,
+        latest_update=latest_update,
     )
 
 

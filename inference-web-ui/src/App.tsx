@@ -1,5 +1,5 @@
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import './App.css'
 
 type NavKey =
@@ -48,6 +48,7 @@ type CatalogModel = {
   source?: string | null
   source_url?: string | null
   schema_source?: string | null
+  latest_update?: string | null
 }
 
 type CatalogResponse = {
@@ -94,6 +95,13 @@ const parseJson = <T,>(raw: string, fallback: T): T => {
   }
 }
 
+const CACHE_TTL = {
+  apiKeys: 30_000,
+  models: 15_000,
+  catalog: 60_000,
+  predictions: 15_000,
+}
+
 const pretty = (value: unknown) => JSON.stringify(value, null, 2)
 
 const toSchemaField = (raw: unknown): ModelSchemaField | null => {
@@ -135,6 +143,7 @@ function App() {
   const [log, setLog] = useState<string>('')
   const [error, setError] = useState<string>('')
   const [busy, setBusy] = useState(false)
+  const cacheRef = useRef(new Map<string, { ts: number; value: unknown }>())
 
   const headers = useMemo(() => {
     const out: Record<string, string> = {
@@ -169,6 +178,29 @@ function App() {
       throw new Error(`${response.status} ${response.statusText}: ${text}`)
     }
     return (text ? JSON.parse(text) : {}) as T
+  }
+
+  const cacheKey = (key: string) => `inference.cache.${key}.${baseUrl}`
+
+  const readCache = <T,>(key: string, maxAgeMs: number): T | null => {
+    const now = Date.now()
+    const entry = cacheRef.current.get(key)
+    if (entry && now - entry.ts <= maxAgeMs) {
+      return entry.value as T
+    }
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    const parsed = parseJson<{ ts: number; value: T } | null>(raw, null)
+    if (!parsed) return null
+    if (now - parsed.ts > maxAgeMs) return null
+    cacheRef.current.set(key, { ts: parsed.ts, value: parsed.value })
+    return parsed.value
+  }
+
+  const writeCache = <T,>(key: string, value: T) => {
+    const entry = { ts: Date.now(), value }
+    cacheRef.current.set(key, entry)
+    localStorage.setItem(key, JSON.stringify(entry))
   }
 
   const persist = () => {
@@ -209,11 +241,41 @@ function App() {
   const [catalogCategory, setCatalogCategory] = useState('')
   const [catalogHardware, setCatalogHardware] = useState('')
   const [catalogSize, setCatalogSize] = useState('')
+  const [catalogSort, setCatalogSort] = useState<'latest' | 'name' | 'size'>(
+    'latest',
+  )
   const [catalogMountId, setCatalogMountId] = useState('')
   const [reconStatus, setReconStatus] = useState<Record<string, unknown> | null>(
     null,
   )
   const [reconSources, setReconSources] = useState('huggingface,replicate')
+
+  const sortedCatalogModels = useMemo(() => {
+    const list = catalog?.models ? [...catalog.models] : []
+    if (!list.length) return list
+    if (catalogSort === 'name') {
+      return list.sort((a, b) => a.name.localeCompare(b.name))
+    }
+    if (catalogSort === 'size') {
+      const order: Record<string, number> = {
+        tiny: 0,
+        small: 1,
+        medium: 2,
+        large: 3,
+        xl: 4,
+      }
+      return list.sort(
+        (a, b) =>
+          (order[a.size] ?? 99) - (order[b.size] ?? 99) ||
+          a.name.localeCompare(b.name),
+      )
+    }
+    return list.sort((a, b) => {
+      const aTime = a.latest_update ? Date.parse(a.latest_update) : 0
+      const bTime = b.latest_update ? Date.parse(b.latest_update) : 0
+      return bTime - aTime
+    })
+  }, [catalog, catalogSort])
 
   const [selectedModelId, setSelectedModelId] = useState('')
   const [predictionInput, setPredictionInput] = useState<Record<string, unknown>>(
@@ -251,10 +313,20 @@ function App() {
       setLog('Dashboard loaded')
     })
 
-  const loadApiKeys = () =>
+  const loadApiKeys = (force = false) =>
     withBusy(async () => {
+      const key = cacheKey('api-keys')
+      if (!force) {
+        const cached = readCache<ApiKeyItem[]>(key, CACHE_TTL.apiKeys)
+        if (cached) {
+          setApiKeys(cached)
+          setLog('API keys loaded (cached)')
+          return
+        }
+      }
       const list = await api<ApiKeyItem[]>('/v1/admin/api-keys')
       setApiKeys(list)
+      writeCache(key, list)
       setLog('API keys loaded')
     })
 
@@ -272,19 +344,29 @@ function App() {
         body: JSON.stringify(body),
       })
       setNewKeyResult(pretty(result))
-      await loadApiKeys()
+      await loadApiKeys(true)
     })
 
   const revokeApiKey = (id: string) =>
     withBusy(async () => {
       await api(`/v1/admin/api-keys/${id}/revoke`, { method: 'POST' })
-      await loadApiKeys()
+      await loadApiKeys(true)
     })
 
-  const loadModels = () =>
+  const loadModels = (force = false) =>
     withBusy(async () => {
+      const key = cacheKey('models')
+      if (!force) {
+        const cached = readCache<{ models: ModelItem[] }>(key, CACHE_TTL.models)
+        if (cached) {
+          setModels(cached.models)
+          setLog('Models refreshed (cached)')
+          return
+        }
+      }
       const result = await api<{ models: ModelItem[] }>('/v1/models/')
       setModels(result.models)
+      writeCache(key, result)
       if (!selectedModelId && result.models.length > 0) {
         setSelectedModelId(result.models[0].id)
         const schema = result.models[0].input_schema || {}
@@ -320,21 +402,33 @@ function App() {
 
   const deleteModel = (id: string) =>
     withBusy(async () => {
-      await api(`/v1/models/${id}`, { method: 'DELETE' })
-      await loadModels()
+      await api(`/v1/models/${id}/unmount`, { method: 'POST' })
+      await loadModels(true)
     })
 
-  const loadCatalog = () =>
+  const loadCatalog = (force = false) =>
     withBusy(async () => {
       const params = new URLSearchParams()
       if (catalogCategory) params.set('category', catalogCategory)
       if (catalogSize) params.set('size', catalogSize)
       if (catalogHardware) params.set('hardware', catalogHardware)
       const query = params.toString()
+      const key = cacheKey(
+        `catalog.${catalogCategory}.${catalogSize}.${catalogHardware}`,
+      )
+      if (!force) {
+        const cached = readCache<CatalogResponse>(key, CACHE_TTL.catalog)
+        if (cached) {
+          setCatalog(cached)
+          setLog('Catalog refreshed (cached)')
+          return
+        }
+      }
       const result = await api<CatalogResponse>(
         `/v1/catalog/models${query ? `?${query}` : ''}`,
       )
       setCatalog(result)
+      writeCache(key, result)
       setLog('Catalog refreshed')
     })
 
@@ -350,7 +444,7 @@ function App() {
         body: JSON.stringify(body),
       })
       setLog(pretty(result))
-      await loadModels()
+      await loadModels(true)
     })
 
   const loadReconStatus = () =>
@@ -374,7 +468,7 @@ function App() {
       )
       setReconStatus(status)
       setLog('Recon triggered')
-      await loadCatalog()
+      await loadCatalog(true)
     })
 
   const createPrediction = () =>
@@ -392,19 +486,32 @@ function App() {
       setLog(`Prediction created: ${result.id}`)
     })
 
-  const loadPredictions = () =>
+  const loadPredictions = (force = false) =>
     withBusy(async () => {
+      const key = cacheKey('predictions')
+      if (!force) {
+        const cached = readCache<{ predictions: PredictionItem[] }>(
+          key,
+          CACHE_TTL.predictions,
+        )
+        if (cached) {
+          setPredictions(cached.predictions)
+          setLog('Predictions loaded (cached)')
+          return
+        }
+      }
       const result = await api<{ predictions: PredictionItem[] }>(
         '/v1/predictions/',
       )
       setPredictions(result.predictions)
+      writeCache(key, result)
       setLog('Predictions loaded')
     })
 
   const cancelPrediction = (id: string) =>
     withBusy(async () => {
       await api(`/v1/predictions/${id}/cancel`, { method: 'POST' })
-      await loadPredictions()
+      await loadPredictions(true)
     })
 
   const loadPrediction = () =>
@@ -492,10 +599,10 @@ function App() {
             <h1>{active.replace('-', ' ')}</h1>
           </div>
           <div className="topbar-actions">
-            <button onClick={loadCatalog} disabled={busy}>
+            <button onClick={() => loadCatalog(true)} disabled={busy}>
               Refresh catalog
             </button>
-            <button onClick={loadModels} disabled={busy}>
+            <button onClick={() => loadModels(true)} disabled={busy}>
               Refresh models
             </button>
           </div>
@@ -585,7 +692,7 @@ function App() {
                   <h2>Catalog</h2>
                   <p>Browse and mount models.</p>
                 </div>
-                <button onClick={loadCatalog} disabled={busy}>
+                <button onClick={() => loadCatalog(true)} disabled={busy}>
                   Refresh
                 </button>
               </div>
@@ -605,6 +712,16 @@ function App() {
                   value={catalogHardware}
                   onChange={(e) => setCatalogHardware(e.target.value)}
                 />
+                <select
+                  value={catalogSort}
+                  onChange={(e) =>
+                    setCatalogSort(e.target.value as 'latest' | 'name' | 'size')
+                  }
+                >
+                  <option value="latest">Sort: latest update</option>
+                  <option value="name">Sort: name</option>
+                  <option value="size">Sort: size</option>
+                </select>
               </div>
               <div className="recon-bar">
                 <input
@@ -634,7 +751,7 @@ function App() {
                 {!catalog?.models?.length && (
                   <p className="muted">No catalog data.</p>
                 )}
-                {catalog?.models?.map((item) => (
+                {sortedCatalogModels.map((item) => (
                   <button
                     key={item.id}
                     className="list-item"
@@ -670,7 +787,7 @@ function App() {
                 <h2>Mounted models</h2>
                 <p>Unload with one click.</p>
               </div>
-              <button onClick={loadModels} disabled={busy}>
+              <button onClick={() => loadModels(true)} disabled={busy}>
                 Refresh
               </button>
             </div>
@@ -892,7 +1009,7 @@ function App() {
                   <h2>Recent predictions</h2>
                   <p>Status + cancel.</p>
                 </div>
-                <button onClick={loadPredictions} disabled={busy}>
+                <button onClick={() => loadPredictions(true)} disabled={busy}>
                   Refresh
                 </button>
               </div>
@@ -983,7 +1100,7 @@ function App() {
                 <div>
                   <h2>Active keys</h2>
                 </div>
-                <button onClick={loadApiKeys} disabled={busy}>
+                <button onClick={() => loadApiKeys(true)} disabled={busy}>
                   Refresh
                 </button>
               </div>

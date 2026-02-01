@@ -65,3 +65,19 @@ async def delete_model(
     db.commit()
 
     return {"message": "Model deleted successfully"}
+
+
+@router.post("/{model_id}/unmount")
+async def unmount_model(
+    model_id: str,
+    db: Session = Depends(get_db)
+):
+    """Unmount (delete) a model without relying on DELETE."""
+    model = db.query(Model).filter(Model.id == model_id).first()
+    if not model:
+        raise HTTPException(status_code=404, detail="Model not found")
+
+    db.delete(model)
+    db.commit()
+
+    return {"message": "Model unmounted successfully"}

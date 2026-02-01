@@ -22,12 +22,14 @@ class ImageGenerationModel(BaseInferenceModel):
 
     def predict(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """Generate image from text prompt"""
-        prompt = inputs.get("prompt", "")
-        negative_prompt = inputs.get("negative_prompt", "")
-        num_inference_steps = inputs.get("num_inference_steps", 50)
-        guidance_scale = inputs.get("guidance_scale", 7.5)
-        width = inputs.get("width", 512)
-        height = inputs.get("height", 512)
+        prompt = inputs.get("prompt")
+        if not prompt or not isinstance(prompt, str):
+            raise ValueError("Missing required input: prompt")
+        negative_prompt = inputs.get("negative_prompt") or ""
+        num_inference_steps = int(inputs.get("num_inference_steps") or 50)
+        guidance_scale = float(inputs.get("guidance_scale") or 7.5)
+        width = int(inputs.get("width") or 512)
+        height = int(inputs.get("height") or 512)
         seed = inputs.get("seed")
 
         generator = None
