@@ -15,6 +15,13 @@ services:
       timeout: 5s
       retries: 5
 
+  web:
+    build:
+      context: ./inference-web-ui
+      dockerfile: Dockerfile
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
   redis:
     image: redis:7-alpine
     command: redis-server --requirepass ${REDIS_PASSWORD:-changeme}

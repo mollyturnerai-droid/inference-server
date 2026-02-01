@@ -5,7 +5,8 @@
 
 URL="${1:-https://qghelri26v3kiz-8000.proxy.runpod.net}"
 
-API_KEY="${API_KEY:-}"
+INFERENCE_SERVER_API_KEY="${INFERENCE_SERVER_API_KEY:-}"
+API_KEY="${INFERENCE_SERVER_API_KEY:-${API_KEY:-}}"
 
 echo "========================================"
 echo "Testing Inference Server Deployment"

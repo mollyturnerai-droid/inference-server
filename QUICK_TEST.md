@@ -21,6 +21,12 @@ All `/v1/*` endpoints require an API key.
 Set an admin key from your environment:
 
 ```bash
+INFERENCE_SERVER_API_KEY="<your-master-api-key-here>"
+```
+
+Or use `API_KEY` (supported for compatibility):
+
+```bash
 API_KEY="<your-master-api-key-here>"
 ```
 
