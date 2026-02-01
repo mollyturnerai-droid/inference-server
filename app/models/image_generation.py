@@ -1,6 +1,6 @@
 from typing import Dict, Any
 import torch
-from diffusers import StableDiffusionPipeline
+from diffusers import StableDiffusionPipeline, StableDiffusionXLPipeline
 from .base_model import BaseInferenceModel
 import io
 import uuid
@@ -11,7 +11,11 @@ from app.services.storage import storage_service
 class ImageGenerationModel(BaseInferenceModel):
     def load(self):
         """Load a Stable Diffusion model"""
-        self.model = StableDiffusionPipeline.from_pretrained(
+        model_path_lower = (self.model_path or "").lower()
+        use_sdxl = any(token in model_path_lower for token in ["sdxl", "playground", "xl"])
+        pipeline_cls = StableDiffusionXLPipeline if use_sdxl else StableDiffusionPipeline
+
+        self.model = pipeline_cls.from_pretrained(
             self.model_path,
             torch_dtype=torch.float16 if self.device == "cuda" else torch.float32
         )
