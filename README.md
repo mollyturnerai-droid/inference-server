@@ -259,7 +259,7 @@ Key environment variables:
 | `API_HOST` | API server host | 0.0.0.0 |
 | `API_PORT` | API server port | 8000 |
 | `DATABASE_URL` | PostgreSQL connection string | - |
-| `DATABASE_FORCE_IPV4` | Resolve PostgreSQL hostnames to IPv4 only | false |
+| `DATABASE_FORCE_IPV4` | Resolve PostgreSQL hostnames to IPv4 only | true |
 | `DATABASE_HOSTADDR` | Override PostgreSQL host address (IPv4) | - |
 | `REDIS_HOST` | Redis host | localhost |
 | `SECRET_KEY` | JWT secret key | - |

@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = "sqlite:///./inference.db"
-    DATABASE_FORCE_IPV4: bool = False
+    DATABASE_FORCE_IPV4: bool = True
     DATABASE_HOSTADDR: Optional[str] = None
 
     # Authentication
