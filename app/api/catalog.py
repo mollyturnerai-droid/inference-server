@@ -13,6 +13,7 @@ from app.services.catalog import (
     get_catalog_categories,
     upsert_catalog_model,
     delete_catalog_model,
+    refresh_catalog_model_schema,
 )
 from app.services.recon import run_recon, get_recon_status
 from app.db import get_db
@@ -150,6 +151,15 @@ async def get_catalog_model(catalog_id: str):
     if not model:
         raise HTTPException(status_code=404, detail=f"Model '{catalog_id}' not found in catalog")
     return model
+
+
+@router.post("/models/{catalog_id}/schema/refresh", response_model=CatalogModel, dependencies=[Depends(_require_catalog_admin)])
+async def refresh_catalog_schema(catalog_id: str):
+    """Refresh a model's input schema from its source (Replicate/Hugging Face)."""
+    try:
+        return refresh_catalog_model_schema(catalog_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/mount", response_model=MountResponse)

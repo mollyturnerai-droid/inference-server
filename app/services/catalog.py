@@ -4,6 +4,10 @@ from datetime import datetime
 from app.schemas.model import ModelType, ModelSchema
 from app.core.config import settings
 from app.db import SessionLocal, CatalogModelEntry
+from app.services.recon import (
+    _schema_from_hf_model,
+    _schema_from_replicate_model,
+)
 import json
 import os
 
@@ -797,6 +801,86 @@ def get_catalog_model_by_id(model_id: str) -> Optional[CatalogModel]:
             if model.id == model_id:
                 return model
     return None
+
+
+def refresh_catalog_model_schema(model_id: str) -> CatalogModel:
+    db = SessionLocal()
+    try:
+        row = db.query(CatalogModelEntry).filter(CatalogModelEntry.id == model_id).first()
+        if not row:
+            raise ValueError("Model not found")
+
+        source = (row.source or "").lower()
+        schema: Dict[str, Any] = {}
+        schema_source: Optional[str] = None
+        schema_version: Optional[str] = None
+        metadata: Dict[str, Any] = {}
+
+        def _try_replicate(owner: str, name: str) -> bool:
+            nonlocal schema, schema_source, schema_version, metadata
+            try:
+                schema, schema_source, schema_version, metadata = _schema_from_replicate_model(owner, name)
+                return bool(schema)
+            except Exception:
+                return False
+
+        def _try_hf(hf_id: str) -> bool:
+            nonlocal schema, schema_source, schema_version, metadata
+            try:
+                schema, schema_source, schema_version, metadata = _schema_from_hf_model(hf_id)
+                return bool(schema)
+            except Exception:
+                return False
+
+        # Prefer Replicate, then Hugging Face, when both are possible.
+        tried = False
+        if source == "replicate":
+            tried = True
+            owner_name = row.source_id or ""
+            if "/" in owner_name:
+                owner, name = owner_name.split("/", 1)
+                _try_replicate(owner, name)
+        elif source == "huggingface":
+            tried = True
+            hf_id = row.source_id or row.model_path or ""
+            if hf_id:
+                _try_hf(hf_id)
+
+        if not schema:
+            # Try to infer from IDs when source is missing or mixed.
+            candidate = row.source_id or row.model_path or row.id
+            if candidate.startswith("replicate:"):
+                owner_name = candidate.split("replicate:", 1)[1]
+                owner_name = owner_name.split(":", 1)[0]
+                if "/" in owner_name and _try_replicate(*owner_name.split("/", 1)):
+                    tried = True
+            if not schema and candidate.startswith("hf:"):
+                hf_id = candidate.split("hf:", 1)[1]
+                if hf_id and _try_hf(hf_id):
+                    tried = True
+            if not schema and "/" in candidate:
+                cleaned = candidate.split(":", 1)[-1] if candidate.startswith("replicate:") else candidate
+                if "/" in cleaned and _try_replicate(*cleaned.split("/", 1)):
+                    tried = True
+            if not schema and "/" in candidate and _try_hf(candidate):
+                tried = True
+
+        if not tried:
+            raise ValueError("No schema source available for model")
+
+        if schema:
+            row.input_schema = schema
+            row.schema_source = schema_source
+            row.schema_version = schema_version
+            row.metadata_json = metadata
+            row.last_synced_at = datetime.utcnow()
+            row.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(row)
+
+        return _row_to_catalog_model(row)
+    finally:
+        db.close()
 
 
 def get_catalog_categories() -> List[str]:

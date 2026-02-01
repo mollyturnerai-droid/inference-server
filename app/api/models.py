@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.db import get_db, Model
+from app.db import get_db, Model, Prediction
 from app.schemas import ModelCreate, ModelResponse, ModelList
 
 router = APIRouter(prefix="/models", tags=["Models"])
@@ -57,11 +57,16 @@ async def delete_model(
     db: Session = Depends(get_db)
 ):
     """Delete a model"""
-    model = db.query(Model).filter(Model.id == model_id).first()
-    if not model:
+    exists = db.query(Model.id).filter(Model.id == model_id).first()
+    if not exists:
         raise HTTPException(status_code=404, detail="Model not found")
 
-    db.delete(model)
+    db.query(Prediction).filter(Prediction.model_id == model_id).delete(
+        synchronize_session=False
+    )
+    db.query(Model).filter(Model.id == model_id).delete(
+        synchronize_session=False
+    )
     db.commit()
 
     return {"message": "Model deleted successfully"}
@@ -73,11 +78,16 @@ async def unmount_model(
     db: Session = Depends(get_db)
 ):
     """Unmount (delete) a model without relying on DELETE."""
-    model = db.query(Model).filter(Model.id == model_id).first()
-    if not model:
+    exists = db.query(Model.id).filter(Model.id == model_id).first()
+    if not exists:
         raise HTTPException(status_code=404, detail="Model not found")
 
-    db.delete(model)
+    db.query(Prediction).filter(Prediction.model_id == model_id).delete(
+        synchronize_session=False
+    )
+    db.query(Model).filter(Model.id == model_id).delete(
+        synchronize_session=False
+    )
     db.commit()
 
     return {"message": "Model unmounted successfully"}

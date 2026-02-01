@@ -121,6 +121,21 @@ def _schema_from_pipeline_tag(tag: Optional[str]) -> Tuple[Dict[str, Any], Optio
     return template, "template"
 
 
+def _schema_from_hf_model(model_id: str) -> Tuple[Dict[str, Any], Optional[str], Optional[str], Dict[str, Any]]:
+    url = f"https://huggingface.co/api/models/{model_id}"
+    headers = {}
+    if settings.HF_API_TOKEN:
+        headers["Authorization"] = f"Bearer {settings.HF_API_TOKEN}"
+    response = requests.get(url, headers=headers, timeout=settings.RECON_TIMEOUT_SECONDS)
+    response.raise_for_status()
+    data = response.json()
+    pipeline_tag = data.get("pipeline_tag")
+    schema, schema_source = _schema_from_pipeline_tag(pipeline_tag)
+    metadata = {"pipeline_tag": pipeline_tag}
+    schema_version = data.get("sha")
+    return schema, schema_source, schema_version, metadata
+
+
 def _upsert_catalog_entry(
     db,
     *,
@@ -233,6 +248,14 @@ def _fetch_replicate_models(limit: int) -> List[Dict[str, Any]]:
     return data.get("results", [])
 
 
+def _fetch_replicate_model(owner: str, name: str) -> Dict[str, Any]:
+    headers = {"Authorization": f"Token {settings.REPLICATE_API_TOKEN}"}
+    url = f"https://api.replicate.com/v1/models/{owner}/{name}"
+    response = requests.get(url, headers=headers, timeout=settings.RECON_TIMEOUT_SECONDS)
+    response.raise_for_status()
+    return response.json()
+
+
 def _fetch_replicate_version(owner: str, name: str, version_id: str) -> Dict[str, Any]:
     headers = {"Authorization": f"Token {settings.REPLICATE_API_TOKEN}"}
     url = f"https://api.replicate.com/v1/models/{owner}/{name}/versions/{version_id}"
@@ -262,6 +285,23 @@ def _schema_from_openapi(openapi_schema: Dict[str, Any]) -> Dict[str, Any]:
         if key in required and mapped[key].get("default") is None:
             mapped[key]["default"] = ""
     return mapped
+
+
+def _schema_from_replicate_model(owner: str, name: str) -> Tuple[Dict[str, Any], Optional[str], Optional[str], Dict[str, Any]]:
+    if not settings.REPLICATE_API_TOKEN:
+        return {}, None, None, {}
+    model = _fetch_replicate_model(owner, name)
+    latest_version = model.get("latest_version") or {}
+    version_id = latest_version.get("id")
+    schema = {}
+    if version_id:
+        try:
+            version = _fetch_replicate_version(owner, name, version_id)
+            openapi_schema = version.get("openapi_schema") or {}
+            schema = _schema_from_openapi(openapi_schema) if openapi_schema else {}
+        except Exception:
+            schema = {}
+    return schema, "openapi" if schema else None, version_id, {"latest_version": version_id}
 
 
 def _sync_replicate(db, limit: int) -> int:

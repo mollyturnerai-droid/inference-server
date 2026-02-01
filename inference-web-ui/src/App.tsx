@@ -245,6 +245,7 @@ function App() {
     'latest',
   )
   const [catalogMountId, setCatalogMountId] = useState('')
+  const [selectedCatalogId, setSelectedCatalogId] = useState('')
   const [reconStatus, setReconStatus] = useState<Record<string, unknown> | null>(
     null,
   )
@@ -276,6 +277,11 @@ function App() {
       return bTime - aTime
     })
   }, [catalog, catalogSort])
+
+  const selectedCatalogModel = useMemo(
+    () => catalog?.models?.find((item) => item.id === selectedCatalogId) || null,
+    [catalog, selectedCatalogId],
+  )
 
   const [selectedModelId, setSelectedModelId] = useState('')
   const [predictionInput, setPredictionInput] = useState<Record<string, unknown>>(
@@ -428,6 +434,9 @@ function App() {
         `/v1/catalog/models${query ? `?${query}` : ''}`,
       )
       setCatalog(result)
+      if (!selectedCatalogId && result.models.length > 0) {
+        setSelectedCatalogId(result.models[0].id)
+      }
       writeCache(key, result)
       setLog('Catalog refreshed')
     })
@@ -446,6 +455,42 @@ function App() {
       setLog(pretty(result))
       await loadModels(true)
     })
+
+  const refreshCatalogSchema = (catalogId: string) =>
+    withBusy(async () => {
+      if (!catalogToken) {
+        setLog('Catalog admin token required for schema refresh')
+        return
+      }
+      const result = await api<CatalogModel>(
+        `/v1/catalog/models/${catalogId}/schema/refresh`,
+        { method: 'POST' },
+        { catalogAdmin: true },
+      )
+      setCatalog((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          models: prev.models.map((item) =>
+            item.id === catalogId ? result : item,
+          ),
+        }
+      })
+      setLog(`Schema refreshed for ${catalogId}`)
+    })
+
+  const handleSelectCatalog = (catalogId: string) => {
+    setCatalogMountId(catalogId)
+    setSelectedCatalogId(catalogId)
+    const model = catalog?.models?.find((item) => item.id === catalogId)
+    if (
+      model &&
+      (!model.input_schema || Object.keys(model.input_schema).length === 0) &&
+      catalogToken
+    ) {
+      void refreshCatalogSchema(catalogId)
+    }
+  }
 
   const loadReconStatus = () =>
     withBusy(async () => {
@@ -755,7 +800,7 @@ function App() {
                   <button
                     key={item.id}
                     className="list-item"
-                    onClick={() => setCatalogMountId(item.id)}
+                    onClick={() => handleSelectCatalog(item.id)}
                   >
                     <div>
                       <strong>{item.name}</strong>
@@ -773,9 +818,19 @@ function App() {
                   <h2>Selected schema</h2>
                   <p>Server-curated input schema.</p>
                 </div>
+                <button
+                  onClick={() =>
+                    selectedCatalogId && refreshCatalogSchema(selectedCatalogId)
+                  }
+                  disabled={busy || !selectedCatalogId}
+                >
+                  Refresh schema
+                </button>
               </div>
               <pre>
-                {selectedModel ? pretty(selectedModel.input_schema) : 'Select a model'}
+                {selectedCatalogModel
+                  ? pretty(selectedCatalogModel.input_schema || {})
+                  : 'Select a model'}
               </pre>
             </div>
           </section>
