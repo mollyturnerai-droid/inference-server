@@ -171,6 +171,7 @@ function App() {
     health: null as null | Record<string, unknown>,
     detailed: null as null | Record<string, unknown>,
     system: null as null | Record<string, unknown>,
+    db: null as null | Record<string, unknown>,
   })
 
   const [apiKeys, setApiKeys] = useState<ApiKeyItem[]>([])
@@ -233,7 +234,8 @@ function App() {
       const health = await api<Record<string, unknown>>('/health')
       const detailed = await api<Record<string, unknown>>('/health/detailed')
       const system = await api<Record<string, unknown>>('/v1/system/status')
-      setDashboard({ health, detailed, system })
+      const db = await api<Record<string, unknown>>('/v1/system/db-info')
+      setDashboard({ health, detailed, system, db })
       setLog('Dashboard loaded')
     })
 
@@ -447,6 +449,10 @@ function App() {
       <article>
         <h3>System</h3>
         <pre>{dashboard.system ? pretty(dashboard.system) : 'No data'}</pre>
+      </article>
+      <article>
+        <h3>Database</h3>
+        <pre>{dashboard.db ? pretty(dashboard.db) : 'No data'}</pre>
       </article>
       {error && (
         <article>

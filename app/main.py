@@ -8,6 +8,7 @@ from app.api import api_router
 from app.db import engine, Base, SessionLocal, ApiKey
 from app.core.config import settings
 from app.services.auth import get_current_api_key
+from sqlalchemy.engine.url import make_url
 
 # Create database tables (only if database is available)
 try:
@@ -239,6 +240,18 @@ async def system_status(principal=Depends(get_current_api_key)):
             "max_loaded_models": settings.MAX_LOADED_MODELS,
             "idle_ttl_seconds": settings.MODEL_IDLE_TTL_SECONDS,
         },
+    }
+
+
+@app.get("/v1/system/db-info")
+async def db_info(principal=Depends(get_current_api_key)):
+    """Return non-sensitive DB connection info to confirm the active database."""
+    url = make_url(settings.DATABASE_URL)
+    return {
+        "driver": url.drivername,
+        "host": url.host,
+        "port": url.port,
+        "database": url.database,
     }
 
 
