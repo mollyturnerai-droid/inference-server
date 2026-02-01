@@ -18,4 +18,5 @@ celery_app.conf.update(
     task_time_limit=settings.DEFAULT_TIMEOUT,
     worker_prefetch_multiplier=1,
     worker_max_tasks_per_child=50,
+    broker_connection_retry_on_startup=True,
 )
