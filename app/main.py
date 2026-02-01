@@ -58,6 +58,9 @@ app.add_middleware(
 
 @app.middleware("http")
 async def require_api_key(request: Request, call_next):
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     public_paths = {
         "/",
         "/health",
