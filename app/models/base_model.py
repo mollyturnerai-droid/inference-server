@@ -1,5 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
+import os
+# Set allocator config early to reduce fragmentation if not already set.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "max_split_size_mb:128")
 import torch
 import os
 

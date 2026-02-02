@@ -1,4 +1,7 @@
 from typing import Dict, Any, Optional
+import os
+# Set allocator config early to reduce fragmentation if not already set.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "max_split_size_mb:128")
 import torch
 from diffusers import (
     StableDiffusionPipeline,
@@ -13,8 +16,8 @@ from PIL import Image
 from app.services.storage import storage_service
 from urllib.parse import urlparse
 import requests
-import os
 from app.core.config import settings
+import inspect
 
 
 class ImageGenerationModel(BaseInferenceModel):
@@ -82,6 +85,53 @@ class ImageGenerationModel(BaseInferenceModel):
             return Image.open(resp.raw).convert("RGB")
         raise ValueError("Unsupported image input")
 
+    def _apply_vram_limits(self, width: int, height: int, steps: int):
+        if self.device != "cuda" or not torch.cuda.is_available():
+            return width, height, steps
+
+        free_bytes, total_bytes = torch.cuda.mem_get_info()
+        free_gb = free_bytes / (1024 ** 3)
+        pixels = max(width * height, 1)
+
+        if free_gb < 2.0:
+            max_pixels = 512 * 512
+            max_steps = 8
+        elif free_gb < 3.0:
+            max_pixels = 768 * 768
+            max_steps = 10
+        else:
+            max_pixels = 1024 * 1024
+            max_steps = steps
+
+        if pixels > max_pixels:
+            scale = (max_pixels / float(pixels)) ** 0.5
+            width = int(width * scale)
+            height = int(height * scale)
+
+            # Round down to multiples of 64 for diffusion models.
+            width = max(64, (width // 64) * 64)
+            height = max(64, (height // 64) * 64)
+
+        steps = min(steps, max_steps)
+        return width, height, steps
+
+    def _run_pipeline(self, pipeline, *, progress_callback, callback_steps, **kwargs):
+        params = inspect.signature(pipeline.__call__).parameters
+        if "callback_on_step_end" in params:
+            if progress_callback:
+                def _on_step_end(pipe, step, timestep, callback_kwargs):
+                    latents = callback_kwargs.get("latents")
+                    progress_callback(step, timestep, latents)
+                    return callback_kwargs
+
+                kwargs["callback_on_step_end"] = _on_step_end
+                kwargs["callback_on_step_end_tensor_inputs"] = ["latents"]
+        else:
+            if progress_callback:
+                kwargs["callback"] = progress_callback
+                kwargs["callback_steps"] = callback_steps
+        return pipeline(**kwargs).images[0]
+
     def predict(self, inputs: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """Generate image from text prompt"""
         prompt = inputs.get("prompt")
@@ -93,6 +143,10 @@ class ImageGenerationModel(BaseInferenceModel):
         width = int(inputs.get("width") or 512)
         height = int(inputs.get("height") or 512)
         seed = inputs.get("seed")
+
+        width, height, num_inference_steps = self._apply_vram_limits(
+            width, height, num_inference_steps
+        )
 
         generator = None
         if seed is not None:
@@ -108,7 +162,10 @@ class ImageGenerationModel(BaseInferenceModel):
                 init_image = self._load_image(image_input)
             strength = float(inputs.get("strength") or 0.75)
             pipeline = self._get_img2img_pipeline()
-            image = pipeline(
+            image = self._run_pipeline(
+                pipeline,
+                progress_callback=progress_callback,
+                callback_steps=callback_steps,
                 prompt=prompt,
                 negative_prompt=negative_prompt,
                 image=init_image,
@@ -118,11 +175,12 @@ class ImageGenerationModel(BaseInferenceModel):
                 width=width,
                 height=height,
                 generator=generator,
-                callback=progress_callback,
-                callback_steps=callback_steps,
-            ).images[0]
+            )
         else:
-            image = self.pipeline_txt2img(
+            image = self._run_pipeline(
+                self.pipeline_txt2img,
+                progress_callback=progress_callback,
+                callback_steps=callback_steps,
                 prompt=prompt,
                 negative_prompt=negative_prompt,
                 num_inference_steps=num_inference_steps,
@@ -130,9 +188,7 @@ class ImageGenerationModel(BaseInferenceModel):
                 width=width,
                 height=height,
                 generator=generator,
-                callback=progress_callback,
-                callback_steps=callback_steps,
-            ).images[0]
+            )
 
         # Save image to storage and return URL
         image_id = str(uuid.uuid4())
