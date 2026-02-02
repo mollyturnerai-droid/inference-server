@@ -1,5 +1,5 @@
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 
 type NavKey =
@@ -245,6 +245,7 @@ function App() {
     'latest',
   )
   const [catalogMountId, setCatalogMountId] = useState('')
+  const [catalogSearch, setCatalogSearch] = useState('')
   const [selectedCatalogId, setSelectedCatalogId] = useState('')
   const [reconStatus, setReconStatus] = useState<Record<string, unknown> | null>(
     null,
@@ -252,7 +253,23 @@ function App() {
   const [reconSources, setReconSources] = useState('huggingface,replicate')
 
   const sortedCatalogModels = useMemo(() => {
-    const list = catalog?.models ? [...catalog.models] : []
+    let list = catalog?.models ? [...catalog.models] : []
+    const search = catalogSearch.trim().toLowerCase()
+    if (search) {
+      list = list.filter((item) => {
+        const haystack = [
+          item.id,
+          item.name,
+          item.model_path,
+          item.model_type,
+          ...(item.tags ?? []),
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+        return haystack.includes(search)
+      })
+    }
     if (!list.length) return list
     if (catalogSort === 'name') {
       return list.sort((a, b) => a.name.localeCompare(b.name))
@@ -491,6 +508,20 @@ function App() {
       void refreshCatalogSchema(catalogId)
     }
   }
+
+  useEffect(() => {
+    if (active !== 'catalog') return
+    const handle = window.setTimeout(() => {
+      void loadCatalog(true)
+    }, 250)
+    return () => window.clearTimeout(handle)
+  }, [active, catalogCategory, catalogSize, catalogHardware])
+
+  useEffect(() => {
+    if (active === 'catalog' && !catalog) {
+      void loadCatalog(true)
+    }
+  }, [active, catalog])
 
   const loadReconStatus = () =>
     withBusy(async () => {
@@ -801,6 +832,11 @@ function App() {
               </div>
               {reconStatus && <pre>{pretty(reconStatus)}</pre>}
               <div className="mount">
+                <input
+                  placeholder="Search catalog"
+                  value={catalogSearch}
+                  onChange={(e) => setCatalogSearch(e.target.value)}
+                />
                 <input
                   placeholder="Catalog ID"
                   value={catalogMountId}
