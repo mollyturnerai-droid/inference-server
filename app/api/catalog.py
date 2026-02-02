@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, Header
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 import uuid
 from datetime import datetime
@@ -17,7 +17,7 @@ from app.services.catalog import (
 )
 from app.services.recon import run_recon, get_recon_status
 from app.db import get_db
-from app.db.models import Model
+from app.db.models import Model, Prediction
 from app.schemas.model import ModelType
 from app.core.config import settings
 
@@ -25,23 +25,31 @@ router = APIRouter(prefix="/catalog", tags=["Catalog"])
 
 
 class CatalogResponse(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     categories: List[str]
     total_models: int
     models: List[CatalogModel]
 
 
 class CategoryResponse(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     category: str
     models: List[CatalogModel]
 
 
 class MountRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     catalog_id: str
     name: Optional[str] = None
     hardware: Optional[str] = None  # Override recommended hardware
 
 
 class MountResponse(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     success: bool
     message: str
     model_id: Optional[str] = None
@@ -52,6 +60,8 @@ class MountResponse(BaseModel):
 
 
 class ReconStatusResponse(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     in_progress: bool
     last_started_at: Optional[datetime]
     last_completed_at: Optional[datetime]
@@ -182,7 +192,19 @@ async def mount_catalog_model(
     # Use provided name or catalog name
     model_name = request.name or catalog_model.id
 
-    # Check if model with this name already exists
+    # Single-model mode: unmount any existing models before mounting a new one.
+    existing_models = db.query(Model.id, Model.name).all()
+    if existing_models:
+        existing_ids = [row.id for row in existing_models]
+        db.query(Prediction).filter(Prediction.model_id.in_(existing_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(Model).filter(Model.id.in_(existing_ids)).delete(
+            synchronize_session=False
+        )
+        db.commit()
+
+    # Check if model with this name already exists (should be empty after cleanup)
     existing = db.query(Model).filter(Model.name == model_name).first()
     if existing:
         raise HTTPException(
