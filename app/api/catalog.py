@@ -226,6 +226,11 @@ async def mount_catalog_model(
 
     # Create the model entry
     model_id = str(uuid.uuid4())
+    input_schema = {
+        key: value.model_dump() if hasattr(value, "model_dump") else value
+        for key, value in (catalog_model.input_schema or {}).items()
+    }
+
     db_model = Model(
         id=model_id,
         name=model_name,
@@ -233,7 +238,7 @@ async def mount_catalog_model(
         model_type=catalog_model.model_type,
         version="1.0.0",
         model_path=catalog_model.model_path,
-        input_schema=catalog_model.input_schema or {},
+        input_schema=input_schema,
         hardware=hardware,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
