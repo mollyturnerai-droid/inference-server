@@ -55,40 +55,49 @@ async def serve_file(file_path: str):
 
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
-    allowed_types = {
-        "audio/wav",
-        "audio/x-wav",
-        "audio/mpeg",
-        "audio/mp4",
-        "audio/ogg",
-        "video/mp4",
-        "image/jpeg",
-        "image/png",
-    }
-    if not file.content_type or file.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=400,
-            detail="Only audio, video, or image uploads are supported",
-        )
-
     original_name = file.filename or "upload"
     _, ext = os.path.splitext(original_name)
     ext = ext.lower() if ext else ""
     allowed_exts = {".wav", ".mp3", ".m4a", ".ogg", ".mp4", ".jpeg", ".jpg", ".png"}
+    ext_to_type = {
+        ".wav": "audio/wav",
+        ".mp3": "audio/mpeg",
+        ".m4a": "audio/mp4",
+        ".ogg": "audio/ogg",
+        ".mp4": "video/mp4",
+        ".jpeg": "image/jpeg",
+        ".jpg": "image/jpeg",
+        ".png": "image/png",
+    }
+    allowed_types = set(ext_to_type.values()) | {"audio/x-wav"}
+
+    content_type = file.content_type or ""
+    if content_type == "application/octet-stream":
+        content_type = ""
+
+    if content_type not in allowed_types:
+        if ext in ext_to_type:
+            content_type = ext_to_type[ext]
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Only audio, video, or image uploads are supported",
+            )
+
     if ext not in allowed_exts:
-        if file.content_type.startswith("image/"):
+        if content_type.startswith("image/"):
             ext = ".png"
-        elif file.content_type.startswith("video/"):
+        elif content_type.startswith("video/"):
             ext = ".mp4"
         else:
             ext = ".wav"
 
     file_path = f"uploads/{uuid4().hex}{ext}"
     content = await file.read()
-    await storage_service.save_file(file_path=file_path, content=content, content_type=file.content_type)
+    await storage_service.save_file(file_path=file_path, content=content, content_type=content_type)
 
     return {
         "file_path": file_path,
         "url": storage_service.get_public_url(file_path),
-        "content_type": file.content_type,
+        "content_type": content_type,
     }

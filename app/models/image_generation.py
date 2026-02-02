@@ -34,6 +34,8 @@ class ImageGenerationModel(BaseInferenceModel):
             self.model_path,
             torch_dtype=torch.float16 if self.device == "cuda" else torch.float32
         )
+        # Silence diffusers tqdm progress output; we report progress via callbacks.
+        self.pipeline_txt2img.set_progress_bar_config(disable=True)
         self.pipeline_txt2img = self.pipeline_txt2img.to(self.device)
         self.model = self.pipeline_txt2img
 
@@ -50,6 +52,8 @@ class ImageGenerationModel(BaseInferenceModel):
             self.model_path,
             torch_dtype=torch.float16 if self.device == "cuda" else torch.float32
         )
+        # Silence diffusers tqdm progress output; we report progress via callbacks.
+        self.pipeline_img2img.set_progress_bar_config(disable=True)
         self.pipeline_img2img = self.pipeline_img2img.to(self.device)
         if self.device == "cuda":
             self.pipeline_img2img.enable_attention_slicing()
