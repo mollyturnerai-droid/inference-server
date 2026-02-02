@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.services.auth import get_current_api_key
 from app.services.recon import start_recon_scheduler
 from sqlalchemy.engine.url import make_url
+import requests
 
 # Create database tables (only if database is available)
 try:
@@ -260,6 +261,39 @@ async def db_info(principal=Depends(get_current_api_key)):
         "port": url.port,
         "database": url.database,
     }
+
+
+@app.get("/v1/system/hf-status")
+async def hf_status(principal=Depends(get_current_api_key)):
+    """Return whether HF_API_TOKEN is set and which account it maps to."""
+    token = (settings.HF_API_TOKEN or "").strip()
+    if not token:
+        return {"token_present": False, "authenticated": False}
+
+    try:
+        resp = requests.get(
+            "https://huggingface.co/api/whoami-v2",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return {
+                "token_present": True,
+                "authenticated": False,
+                "status_code": resp.status_code,
+            }
+        data = resp.json()
+        return {
+            "token_present": True,
+            "authenticated": True,
+            "username": data.get("name") or data.get("user"),
+        }
+    except Exception as exc:
+        return {
+            "token_present": True,
+            "authenticated": False,
+            "error": str(exc),
+        }
 
 
 # Include API routes
