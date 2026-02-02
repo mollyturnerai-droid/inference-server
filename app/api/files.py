@@ -47,20 +47,41 @@ async def serve_file(file_path: str):
         content_type = "audio/mp4"
     elif suffix == ".ogg":
         content_type = "audio/ogg"
+    elif suffix == ".mp4":
+        content_type = "video/mp4"
 
     return FileResponse(full_path, media_type=content_type)
 
 
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
-    if not file.content_type or not file.content_type.startswith("audio/"):
-        raise HTTPException(status_code=400, detail="Only audio uploads are supported")
+    allowed_types = {
+        "audio/wav",
+        "audio/x-wav",
+        "audio/mpeg",
+        "audio/mp4",
+        "audio/ogg",
+        "video/mp4",
+        "image/jpeg",
+        "image/png",
+    }
+    if not file.content_type or file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail="Only audio, video, or image uploads are supported",
+        )
 
     original_name = file.filename or "upload"
     _, ext = os.path.splitext(original_name)
     ext = ext.lower() if ext else ""
-    if ext not in {".wav", ".mp3", ".m4a", ".ogg"}:
-        ext = ".wav"
+    allowed_exts = {".wav", ".mp3", ".m4a", ".ogg", ".mp4", ".jpeg", ".jpg", ".png"}
+    if ext not in allowed_exts:
+        if file.content_type.startswith("image/"):
+            ext = ".png"
+        elif file.content_type.startswith("video/"):
+            ext = ".mp4"
+        else:
+            ext = ".wav"
 
     file_path = f"uploads/{uuid4().hex}{ext}"
     content = await file.read()
