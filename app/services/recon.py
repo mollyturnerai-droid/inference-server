@@ -29,6 +29,7 @@ _lock = threading.Lock()
 PIPELINE_TO_MODEL_TYPE = {
     "text-generation": ModelType.TEXT_GENERATION,
     "text-to-image": ModelType.TEXT_TO_IMAGE,
+    "image-to-image": ModelType.TEXT_TO_IMAGE,
     "image-to-text": ModelType.IMAGE_TO_TEXT,
     "text-to-speech": ModelType.TEXT_TO_SPEECH,
     "automatic-speech-recognition": ModelType.SPEECH_TO_TEXT,
@@ -121,6 +122,25 @@ def _schema_from_pipeline_tag(tag: Optional[str]) -> Tuple[Dict[str, Any], Optio
         return {}, None
     template = SCHEMA_TEMPLATES.get(model_type, {})
     return template, "template"
+
+
+def _infer_model_type_from_hf_metadata(
+    *,
+    pipeline_tag: Optional[str],
+    tags: List[str],
+    model_id: str,
+) -> ModelType:
+    if pipeline_tag and pipeline_tag in PIPELINE_TO_MODEL_TYPE:
+        return PIPELINE_TO_MODEL_TYPE[pipeline_tag]
+    tag_set = {t.lower() for t in tags if isinstance(t, str)}
+    if "text-to-image" in tag_set or "image-to-image" in tag_set:
+        return ModelType.TEXT_TO_IMAGE
+    diffusion_markers = {"diffusers", "stable-diffusion", "sdxl", "flux", "lora"}
+    if tag_set.intersection(diffusion_markers):
+        return ModelType.TEXT_TO_IMAGE
+    if any(marker in model_id.lower() for marker in ("stable-diffusion", "sdxl", "flux", "lora")):
+        return ModelType.TEXT_TO_IMAGE
+    return ModelType.CUSTOM
 
 
 def _schema_from_hf_model(model_id: str) -> Tuple[Dict[str, Any], Optional[str], Optional[str], Dict[str, Any]]:
@@ -217,9 +237,16 @@ def _sync_huggingface(db, limit: int) -> int:
         if not model_id:
             continue
         pipeline_tag = item.get("pipeline_tag")
-        model_type = PIPELINE_TO_MODEL_TYPE.get(pipeline_tag, ModelType.CUSTOM)
-        schema, schema_source = _schema_from_pipeline_tag(pipeline_tag)
         tags = item.get("tags") or []
+        model_type = _infer_model_type_from_hf_metadata(
+            pipeline_tag=pipeline_tag,
+            tags=tags,
+            model_id=model_id,
+        )
+        schema, schema_source = _schema_from_pipeline_tag(pipeline_tag)
+        if not schema and model_type == ModelType.TEXT_TO_IMAGE:
+            schema = SCHEMA_TEMPLATES[ModelType.TEXT_TO_IMAGE]
+            schema_source = "template"
         card_data = item.get("cardData") or {}
         license_name = item.get("license") or card_data.get("license")
         downloads = item.get("downloads")
@@ -382,10 +409,17 @@ def recon_model(model_id: str) -> bool:
 
         if source == "huggingface" or (source is None and "/" in raw_id):
             data = _fetch_huggingface_model(raw_id)
-            pipeline_tag = data.get("pipeline_tag")
-            model_type = PIPELINE_TO_MODEL_TYPE.get(pipeline_tag, ModelType.CUSTOM)
-            schema, schema_source = _schema_from_pipeline_tag(pipeline_tag)
             tags = data.get("tags") or []
+            pipeline_tag = data.get("pipeline_tag")
+            model_type = _infer_model_type_from_hf_metadata(
+                pipeline_tag=pipeline_tag,
+                tags=tags,
+                model_id=raw_id,
+            )
+            schema, schema_source = _schema_from_pipeline_tag(pipeline_tag)
+            if not schema and model_type == ModelType.TEXT_TO_IMAGE:
+                schema = SCHEMA_TEMPLATES[ModelType.TEXT_TO_IMAGE]
+                schema_source = "template"
             card_data = data.get("cardData") or {}
             license_name = data.get("license") or card_data.get("license")
             downloads = data.get("downloads")

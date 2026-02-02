@@ -136,7 +136,13 @@ async def root():
 @app.get("/health")
 async def health():
     """Basic health check - API is running"""
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "build": {
+            "git_sha": settings.BUILD_GIT_SHA,
+            "image_tag": settings.BUILD_IMAGE_TAG,
+        },
+    }
 
 
 @app.get("/health/detailed")
@@ -191,7 +197,11 @@ async def health_detailed():
     return {
         "status": overall_status,
         "services": status,
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "build": {
+            "git_sha": settings.BUILD_GIT_SHA,
+            "image_tag": settings.BUILD_IMAGE_TAG,
+        },
     }
 
 

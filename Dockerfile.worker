@@ -1,5 +1,11 @@
 FROM python:3.11-slim
 
+# Build metadata (set at build time)
+ARG BUILD_GIT_SHA
+ARG BUILD_IMAGE_TAG
+ENV BUILD_GIT_SHA=$BUILD_GIT_SHA
+ENV BUILD_IMAGE_TAG=$BUILD_IMAGE_TAG
+
 WORKDIR /app
 
 # Install system dependencies

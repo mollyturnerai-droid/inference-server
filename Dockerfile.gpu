@@ -1,6 +1,12 @@
 # GPU-enabled Dockerfile for RunPod
 FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 
+# Build metadata (set at build time)
+ARG BUILD_GIT_SHA
+ARG BUILD_IMAGE_TAG
+ENV BUILD_GIT_SHA=$BUILD_GIT_SHA
+ENV BUILD_IMAGE_TAG=$BUILD_IMAGE_TAG
+
 # Set working directory
 WORKDIR /app
 

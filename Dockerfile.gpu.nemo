@@ -1,6 +1,12 @@
 # GPU-enabled Dockerfile with NeMo (Magpie TTS) support
 FROM nvcr.io/nvidia/pytorch:25.01-py3
 
+# Build metadata (set at build time)
+ARG BUILD_GIT_SHA
+ARG BUILD_IMAGE_TAG
+ENV BUILD_GIT_SHA=$BUILD_GIT_SHA
+ENV BUILD_IMAGE_TAG=$BUILD_IMAGE_TAG
+
 # Set working directory
 WORKDIR /app
 
