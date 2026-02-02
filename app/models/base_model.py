@@ -24,7 +24,7 @@ class BaseInferenceModel(ABC):
         pass
 
     @abstractmethod
-    def predict(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    def predict(self, inputs: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """Run inference on the model"""
         pass
 

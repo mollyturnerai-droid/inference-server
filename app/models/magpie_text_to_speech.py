@@ -37,7 +37,7 @@ class MagpieTextToSpeechModel(BaseInferenceModel):
         if sr:
             self.sr = sr
 
-    def predict(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    def predict(self, inputs: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         if self.model is None:
             raise RuntimeError("Model not loaded")
 

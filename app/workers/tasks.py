@@ -43,12 +43,41 @@ def run_inference(self, prediction_id: str, model_id: str, model_type: str, mode
             hardware=hardware
         )
 
-        # Run inference
-        output = model.predict(input_data)
+        # Run inference with optional progress callback
+        progress_total = int(input_data.get("num_inference_steps") or 0)
+        last_progress_update = 0.0
+
+        def _progress_callback(step: int, timestep: int, latents):
+            nonlocal last_progress_update
+            if progress_total <= 0:
+                return
+            now = datetime.utcnow().timestamp()
+            if now - last_progress_update < 1.0 and step + 1 != progress_total:
+                return
+            last_progress_update = now
+            progress_value = (step + 1) / float(progress_total)
+            db.query(Prediction).filter(Prediction.id == prediction_id).update(
+                {
+                    Prediction.progress: progress_value,
+                    Prediction.progress_step: step + 1,
+                    Prediction.progress_total: progress_total,
+                },
+                synchronize_session=False,
+            )
+            db.commit()
+
+        output = model.predict(
+            input_data,
+            progress_callback=_progress_callback if progress_total else None,
+            callback_steps=1,
+        )
 
         # Update prediction with results
         prediction.status = PredictionStatus.SUCCEEDED
         prediction.output = output
+        prediction.progress = 1.0
+        prediction.progress_step = progress_total if progress_total else None
+        prediction.progress_total = progress_total if progress_total else None
         prediction.completed_at = datetime.utcnow()
         db.commit()
 
@@ -67,6 +96,9 @@ def run_inference(self, prediction_id: str, model_id: str, model_type: str, mode
             prediction.status = PredictionStatus.FAILED
             prediction.error = error_msg
             prediction.logs = error_trace
+            prediction.progress = None
+            prediction.progress_step = None
+            prediction.progress_total = None
             prediction.completed_at = datetime.utcnow()
             db.commit()
 

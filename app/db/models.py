@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, JSON, Boolean, ForeignKey, Enum as SQLEnum, Float
+from sqlalchemy import Column, String, DateTime, JSON, Boolean, ForeignKey, Enum as SQLEnum, Float, Integer
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -58,6 +58,9 @@ class Prediction(Base):
     error = Column(String, nullable=True)
     logs = Column(String, nullable=True)
     webhook = Column(String, nullable=True)
+    progress = Column(Float, nullable=True)
+    progress_step = Column(Integer, nullable=True)
+    progress_total = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)

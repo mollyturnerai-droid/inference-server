@@ -15,6 +15,13 @@ import requests
 # Create database tables (only if database is available)
 try:
     Base.metadata.create_all(bind=engine)
+    # Ensure new prediction progress columns exist (for existing DBs)
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS progress DOUBLE PRECISION"))
+        conn.execute(text("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS progress_step INTEGER"))
+        conn.execute(text("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS progress_total INTEGER"))
+        conn.commit()
 except Exception as e:
     print(f"Warning: Could not create database tables: {e}")
     print("Database will be initialized when connection is available")

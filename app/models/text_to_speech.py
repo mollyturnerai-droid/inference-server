@@ -68,7 +68,7 @@ class TextToSpeechModel(BaseInferenceModel):
 
         raise ValueError("Unsupported reference_audio scheme")
 
-    def predict(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    def predict(self, inputs: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         if self.model is None:
             raise RuntimeError("Model not loaded")
 

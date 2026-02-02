@@ -24,7 +24,7 @@ class ImageGenerationModel(BaseInferenceModel):
         if self.device == "cuda":
             self.model.enable_attention_slicing()
 
-    def predict(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    def predict(self, inputs: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """Generate image from text prompt"""
         prompt = inputs.get("prompt")
         if not prompt or not isinstance(prompt, str):
@@ -40,6 +40,9 @@ class ImageGenerationModel(BaseInferenceModel):
         if seed is not None:
             generator = torch.Generator(device=self.device).manual_seed(seed)
 
+        progress_callback = kwargs.get("progress_callback")
+        callback_steps = kwargs.get("callback_steps", 1)
+
         image = self.model(
             prompt=prompt,
             negative_prompt=negative_prompt,
@@ -47,7 +50,9 @@ class ImageGenerationModel(BaseInferenceModel):
             guidance_scale=guidance_scale,
             width=width,
             height=height,
-            generator=generator
+            generator=generator,
+            callback=progress_callback,
+            callback_steps=callback_steps,
         ).images[0]
 
         # Save image to storage and return URL

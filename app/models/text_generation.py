@@ -17,7 +17,7 @@ class TextGenerationModel(BaseInferenceModel):
         if self.device == "cpu":
             self.model = self.model.to(self.device)
 
-    def predict(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    def predict(self, inputs: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """Generate text based on prompt"""
         prompt = inputs.get("prompt", "")
         max_length = inputs.get("max_length", 100)

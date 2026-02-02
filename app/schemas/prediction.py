@@ -30,6 +30,9 @@ class PredictionResponse(BaseModel):
     output: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     logs: Optional[str] = None
+    progress: Optional[float] = None
+    progress_step: Optional[int] = None
+    progress_total: Optional[int] = None
     created_at: datetime
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
