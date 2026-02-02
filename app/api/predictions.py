@@ -45,6 +45,15 @@ async def create_prediction(
     return db_prediction
 
 
+@router.post("", response_model=PredictionResponse, include_in_schema=False)
+async def create_prediction_noslash(
+    prediction: PredictionInput,
+    db: Session = Depends(get_db),
+):
+    """Create a new prediction (no trailing slash)"""
+    return await create_prediction(prediction=prediction, db=db)
+
+
 @router.get("/{prediction_id}", response_model=PredictionResponse)
 async def get_prediction(
     prediction_id: str,
@@ -74,6 +83,17 @@ async def list_predictions(
     predictions = query.order_by(Prediction.created_at.desc()).offset(skip).limit(limit).all()
 
     return {"predictions": predictions, "next_cursor": None}
+
+
+@router.get("", response_model=PredictionList, include_in_schema=False)
+async def list_predictions_noslash(
+    skip: int = 0,
+    limit: int = 100,
+    status: Optional[PredictionStatus] = None,
+    db: Session = Depends(get_db)
+):
+    """List predictions (no trailing slash)"""
+    return await list_predictions(skip=skip, limit=limit, status=status, db=db)
 
 
 @router.post("/{prediction_id}/cancel")
