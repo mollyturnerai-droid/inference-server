@@ -93,6 +93,12 @@ def run_inference(self, prediction_id: str, model_id: str, model_type: str, mode
         prediction.completed_at = datetime.utcnow()
         db.commit()
 
+        try:
+            from app.services.catalog import increment_prediction_count
+            increment_prediction_count(model_path=model_path)
+        except Exception:
+            pass
+
         # Send webhook if configured
         if prediction.webhook:
             send_webhook.delay(prediction.webhook, prediction_id, output)

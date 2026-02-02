@@ -103,6 +103,7 @@ class CatalogModelEntry(Base):
     schema_source = Column(String, nullable=True)
     schema_version = Column(String, nullable=True)
     metadata_json = Column(JSON, default=dict)
+    prediction_count = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

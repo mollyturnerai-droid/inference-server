@@ -21,6 +21,7 @@ try:
         conn.execute(text("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS progress DOUBLE PRECISION"))
         conn.execute(text("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS progress_step INTEGER"))
         conn.execute(text("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS progress_total INTEGER"))
+        conn.execute(text("ALTER TABLE catalog_models ADD COLUMN IF NOT EXISTS prediction_count INTEGER DEFAULT 0"))
         conn.commit()
 except Exception as e:
     print(f"Warning: Could not create database tables: {e}")

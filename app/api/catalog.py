@@ -184,10 +184,19 @@ async def mount_catalog_model(
     """
     catalog_model = get_catalog_model_by_id(request.catalog_id)
     if not catalog_model:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Model '{request.catalog_id}' not found in catalog"
-        )
+        # Attempt targeted recon for missing model IDs, then retry lookup.
+        from app.services.recon import recon_model
+        candidate = request.catalog_id
+        if recon_model(candidate):
+            catalog_model = get_catalog_model_by_id(request.catalog_id)
+        if not catalog_model and "/" in candidate and not candidate.startswith(("hf:", "replicate:")):
+            if recon_model(f"hf:{candidate}"):
+                catalog_model = get_catalog_model_by_id(f"hf:{candidate}") or get_catalog_model_by_id(candidate)
+        if not catalog_model:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Model '{request.catalog_id}' not found in catalog"
+            )
 
     # Use provided name or catalog name
     model_name = request.name or catalog_model.id

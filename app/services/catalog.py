@@ -32,6 +32,7 @@ class CatalogModel(BaseModel):
     schema_version: Optional[str] = None
     last_synced_at: Optional[datetime] = None
     latest_update: Optional[datetime] = None
+    prediction_count: int = 0
 
 
 # Curated model catalog organized by type
@@ -698,6 +699,7 @@ def _row_to_catalog_model(row: CatalogModelEntry) -> CatalogModel:
         schema_version=row.schema_version,
         last_synced_at=row.last_synced_at,
         latest_update=latest_update,
+        prediction_count=row.prediction_count or 0,
     )
 
 
@@ -727,6 +729,7 @@ def upsert_catalog_model(model: CatalogModel) -> CatalogModel:
                 id=model.id,
                 created_at=now,
                 source=model.source or "manual",
+                prediction_count=0,
             )
             db.add(row)
         row.name = model.name
@@ -872,11 +875,11 @@ def refresh_catalog_model_schema(model_id: str) -> CatalogModel:
             row.input_schema = schema
             row.schema_source = schema_source
             row.schema_version = schema_version
-            row.metadata_json = metadata
-            row.last_synced_at = datetime.utcnow()
-            row.updated_at = datetime.utcnow()
-            db.commit()
-            db.refresh(row)
+        row.metadata_json = metadata
+        row.last_synced_at = datetime.utcnow()
+        row.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(row)
 
         return _row_to_catalog_model(row)
     finally:
@@ -889,3 +892,27 @@ def get_catalog_categories() -> List[str]:
     if db_models:
         return sorted({m.model_type.value for m in db_models})
     return list(_get_catalog().keys())
+
+
+def increment_prediction_count(model_path: str, model_name: Optional[str] = None, model_id: Optional[str] = None) -> bool:
+    db = SessionLocal()
+    try:
+        row = None
+        if model_id:
+            row = db.query(CatalogModelEntry).filter(CatalogModelEntry.id == model_id).first()
+        if row is None and model_path:
+            row = db.query(CatalogModelEntry).filter(CatalogModelEntry.model_path == model_path).first()
+        if row is None and model_path:
+            row = db.query(CatalogModelEntry).filter(CatalogModelEntry.source_id == model_path).first()
+        if row is None and model_path and "/" in model_path:
+            row = db.query(CatalogModelEntry).filter(CatalogModelEntry.id == f"hf:{model_path}").first()
+        if row is None and model_name:
+            row = db.query(CatalogModelEntry).filter(CatalogModelEntry.name == model_name).first()
+        if row is None:
+            return False
+        row.prediction_count = (row.prediction_count or 0) + 1
+        row.updated_at = datetime.utcnow()
+        db.commit()
+        return True
+    finally:
+        db.close()

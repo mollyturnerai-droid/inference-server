@@ -164,6 +164,7 @@ def _upsert_catalog_entry(
     row = db.query(CatalogModelEntry).filter(CatalogModelEntry.id == model_id).first()
     if not row:
         row = CatalogModelEntry(id=model_id, created_at=now)
+        row.prediction_count = 0
         db.add(row)
     row.name = name
     row.description = description
@@ -194,6 +195,16 @@ def _fetch_huggingface(limit: int) -> List[Dict[str, Any]]:
     if settings.HF_API_TOKEN:
         headers["Authorization"] = f"Bearer {settings.HF_API_TOKEN}"
     response = requests.get(url, params=params, headers=headers, timeout=settings.RECON_TIMEOUT_SECONDS)
+    response.raise_for_status()
+    return response.json()
+
+
+def _fetch_huggingface_model(model_id: str) -> Dict[str, Any]:
+    url = f"https://huggingface.co/api/models/{model_id}"
+    headers = {}
+    if settings.HF_API_TOKEN:
+        headers["Authorization"] = f"Bearer {settings.HF_API_TOKEN}"
+    response = requests.get(url, headers=headers, timeout=settings.RECON_TIMEOUT_SECONDS)
     response.raise_for_status()
     return response.json()
 
@@ -350,6 +361,95 @@ def _sync_replicate(db, limit: int) -> int:
         )
         count += 1
     return count
+
+
+def recon_model(model_id: str) -> bool:
+    """Recon a single model into the catalog. Returns True if added/updated."""
+    if not settings.RECON_ENABLED:
+        return False
+
+    db = SessionLocal()
+    try:
+        # Normalize prefixes
+        raw_id = model_id.strip()
+        source = None
+        if raw_id.startswith("hf:"):
+            source = "huggingface"
+            raw_id = raw_id.split("hf:", 1)[1]
+        elif raw_id.startswith("replicate:"):
+            source = "replicate"
+            raw_id = raw_id.split("replicate:", 1)[1]
+
+        if source == "huggingface" or (source is None and "/" in raw_id):
+            data = _fetch_huggingface_model(raw_id)
+            pipeline_tag = data.get("pipeline_tag")
+            model_type = PIPELINE_TO_MODEL_TYPE.get(pipeline_tag, ModelType.CUSTOM)
+            schema, schema_source = _schema_from_pipeline_tag(pipeline_tag)
+            tags = data.get("tags") or []
+            card_data = data.get("cardData") or {}
+            license_name = data.get("license") or card_data.get("license")
+            downloads = data.get("downloads")
+            _upsert_catalog_entry(
+                db,
+                model_id=f"hf:{raw_id}",
+                name=raw_id.split("/")[-1],
+                description=card_data.get("summary") or data.get("description") or "",
+                model_type=model_type,
+                model_path=raw_id,
+                size="medium",
+                vram_gb=None,
+                recommended_hardware="gpu" if model_type in {ModelType.TEXT_TO_IMAGE, ModelType.TEXT_TO_SPEECH} else "cpu",
+                tags=tags,
+                downloads=str(downloads) if downloads is not None else None,
+                license=license_name,
+                input_schema=schema,
+                source="huggingface",
+                source_id=raw_id,
+                source_url=f"https://huggingface.co/{raw_id}",
+                schema_source=schema_source,
+                schema_version=data.get("sha"),
+                metadata_json={"pipeline_tag": pipeline_tag},
+            )
+            db.commit()
+            return True
+
+        if source == "replicate":
+            owner_name = raw_id.split(":", 1)[0]
+            if "/" not in owner_name:
+                return False
+            owner, name = owner_name.split("/", 1)
+            model = _fetch_replicate_model(owner, name)
+            latest_version = model.get("latest_version") or {}
+            version_id = latest_version.get("id")
+            schema, schema_source, schema_version, metadata = _schema_from_replicate_model(owner, name)
+            _upsert_catalog_entry(
+                db,
+                model_id=f"replicate:{owner}/{name}",
+                name=f"{owner}/{name}",
+                description=model.get("description") or "",
+                model_type=ModelType.CUSTOM,
+                model_path=f"replicate:{owner}/{name}:{version_id}" if version_id else f"replicate:{owner}/{name}",
+                size="medium",
+                vram_gb=None,
+                recommended_hardware="gpu",
+                tags=model.get("tags") or [],
+                downloads=None,
+                license=None,
+                input_schema=schema,
+                source="replicate",
+                source_id=f"{owner}/{name}",
+                source_url=model.get("url"),
+                schema_source=schema_source,
+                schema_version=schema_version,
+                metadata_json=metadata,
+            )
+            db.commit()
+            return True
+    except Exception:
+        db.rollback()
+        return False
+    finally:
+        db.close()
 
 
 def run_recon(sources: Optional[List[str]] = None, limit: Optional[int] = None) -> ReconStatus:
