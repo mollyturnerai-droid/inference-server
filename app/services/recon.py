@@ -54,6 +54,8 @@ SCHEMA_TEMPLATES: Dict[ModelType, Dict[str, Dict[str, Any]]] = {
     ModelType.TEXT_TO_IMAGE: {
         "prompt": {"type": "string", "description": "Text prompt"},
         "negative_prompt": {"type": "string", "default": ""},
+        "image": {"type": "string", "description": "Optional init image URL or file path"},
+        "strength": {"type": "number", "default": 0.75, "minimum": 0.0, "maximum": 1.0},
         "width": {"type": "integer", "default": 1024, "minimum": 64, "maximum": 2048},
         "height": {"type": "integer", "default": 1024, "minimum": 64, "maximum": 2048},
         "num_inference_steps": {"type": "integer", "default": 30, "minimum": 1, "maximum": 150},
