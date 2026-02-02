@@ -12,13 +12,17 @@ async def create_model(
     db: Session = Depends(get_db),
 ):
     """Create a new model"""
+    input_schema = {
+        key: value.model_dump() if hasattr(value, "model_dump") else value
+        for key, value in (model.input_schema or {}).items()
+    }
     db_model = Model(
         name=model.name,
         description=model.description,
         model_type=model.model_type,
         version=model.version,
         model_path=model.model_path,
-        input_schema=model.input_schema,
+        input_schema=input_schema,
         hardware=model.hardware,
         owner_id=None
     )
