@@ -4,11 +4,15 @@ from app.models.model_loader import model_loader
 from app.db import SessionLocal, Prediction
 from app.schemas import PredictionStatus
 from datetime import datetime
+import logging
+import time
+import torch
 import traceback
 import httpx
 from urllib.parse import urlparse
 from app.core.config import settings
 
+logger = logging.getLogger(__name__)
 
 class DatabaseTask(Task):
     _db = None
@@ -24,6 +28,14 @@ class DatabaseTask(Task):
 def run_inference(self, prediction_id: str, model_id: str, model_type: str, model_path: str, hardware: str, input_data: dict):
     """Run inference on a model"""
     db = self.db
+
+    start_time = time.monotonic()
+    gpu_name = None
+    if torch.cuda.is_available():
+        try:
+            gpu_name = torch.cuda.get_device_name(0)
+        except Exception:
+            gpu_name = None
 
     try:
         # Update status to processing
@@ -85,6 +97,18 @@ def run_inference(self, prediction_id: str, model_id: str, model_type: str, mode
         if prediction.webhook:
             send_webhook.delay(prediction.webhook, prediction_id, output)
 
+        duration_s = time.monotonic() - start_time
+        logger.info(
+            "Prediction succeeded",
+            extra={
+                "prediction_id": prediction_id,
+                "model_id": model_id,
+                "model_path": model_path,
+                "hardware": hardware,
+                "gpu": gpu_name,
+                "duration_s": round(duration_s, 2),
+            },
+        )
         return {"status": "succeeded", "output": output}
 
     except Exception as e:
@@ -102,6 +126,19 @@ def run_inference(self, prediction_id: str, model_id: str, model_type: str, mode
             prediction.completed_at = datetime.utcnow()
             db.commit()
 
+        duration_s = time.monotonic() - start_time
+        logger.warning(
+            "Prediction failed",
+            extra={
+                "prediction_id": prediction_id,
+                "model_id": model_id,
+                "model_path": model_path,
+                "hardware": hardware,
+                "gpu": gpu_name,
+                "duration_s": round(duration_s, 2),
+                "error": error_msg,
+            },
+        )
         return {"status": "failed", "error": error_msg}
 
     finally:
