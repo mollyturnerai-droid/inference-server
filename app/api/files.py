@@ -101,3 +101,9 @@ async def upload_file(file: UploadFile = File(...)):
         "url": storage_service.get_public_url(file_path),
         "content_type": content_type,
     }
+
+
+@router.post("/upload/", include_in_schema=False)
+async def upload_file_slash(file: UploadFile = File(...)):
+    """Upload file (trailing slash alias)"""
+    return await upload_file(file=file)
