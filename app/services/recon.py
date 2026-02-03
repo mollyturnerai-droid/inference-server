@@ -153,7 +153,12 @@ def _schema_from_hf_model(model_id: str) -> Tuple[Dict[str, Any], Optional[str],
     data = response.json()
     pipeline_tag = data.get("pipeline_tag")
     schema, schema_source = _schema_from_pipeline_tag(pipeline_tag)
-    metadata = {"pipeline_tag": pipeline_tag}
+    supported, unsupported_reason = _hf_support_status(data)
+    metadata = {
+        "pipeline_tag": pipeline_tag,
+        "supported": supported,
+        "unsupported_reason": unsupported_reason,
+    }
     schema_version = data.get("sha")
     return schema, schema_source, schema_version, metadata
 
@@ -229,6 +234,21 @@ def _fetch_huggingface_model(model_id: str) -> Dict[str, Any]:
     return response.json()
 
 
+def _hf_has_supported_files(data: Dict[str, Any]) -> bool:
+    siblings = data.get("siblings") or []
+    for item in siblings:
+        filename = item.get("rfilename") if isinstance(item, dict) else None
+        if filename in {"model_index.json", "config.json"}:
+            return True
+    return False
+
+
+def _hf_support_status(data: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+    if _hf_has_supported_files(data):
+        return True, None
+    return False, "missing model_index.json or config.json"
+
+
 def _sync_huggingface(db, limit: int) -> int:
     items = _fetch_huggingface(limit)
     count = 0
@@ -236,6 +256,7 @@ def _sync_huggingface(db, limit: int) -> int:
         model_id = item.get("id")
         if not model_id:
             continue
+        supported, unsupported_reason = _hf_support_status(item)
         pipeline_tag = item.get("pipeline_tag")
         tags = item.get("tags") or []
         model_type = _infer_model_type_from_hf_metadata(
@@ -253,6 +274,11 @@ def _sync_huggingface(db, limit: int) -> int:
         model_path = model_id
         size = "medium"
         recommended_hardware = "gpu" if model_type in {ModelType.TEXT_TO_IMAGE, ModelType.TEXT_TO_SPEECH} else "cpu"
+        metadata_json = {
+            "pipeline_tag": pipeline_tag,
+            "supported": supported,
+            "unsupported_reason": unsupported_reason,
+        }
         _upsert_catalog_entry(
             db,
             model_id=f"hf:{model_id}",
@@ -272,7 +298,7 @@ def _sync_huggingface(db, limit: int) -> int:
             source_url=f"https://huggingface.co/{model_id}",
             schema_source=schema_source,
             schema_version=item.get("sha"),
-            metadata_json={"pipeline_tag": pipeline_tag},
+            metadata_json=metadata_json,
         )
         count += 1
     return count
@@ -365,6 +391,7 @@ def _sync_replicate(db, limit: int) -> int:
                 openapi_schema = {}
         schema = _schema_from_openapi(openapi_schema) if openapi_schema else {}
         model_type = ModelType.CUSTOM
+        metadata_json = {"latest_version": version_id, "supported": True, "unsupported_reason": None}
         _upsert_catalog_entry(
             db,
             model_id=f"replicate:{owner}/{name}",
@@ -384,7 +411,7 @@ def _sync_replicate(db, limit: int) -> int:
             source_url=item.get("url"),
             schema_source="openapi" if schema else None,
             schema_version=version_id,
-            metadata_json={"latest_version": version_id},
+            metadata_json=metadata_json,
         )
         count += 1
     return count
@@ -409,6 +436,7 @@ def recon_model(model_id: str) -> bool:
 
         if source == "huggingface" or (source is None and "/" in raw_id):
             data = _fetch_huggingface_model(raw_id)
+            supported, unsupported_reason = _hf_support_status(data)
             tags = data.get("tags") or []
             pipeline_tag = data.get("pipeline_tag")
             model_type = _infer_model_type_from_hf_metadata(
@@ -423,6 +451,11 @@ def recon_model(model_id: str) -> bool:
             card_data = data.get("cardData") or {}
             license_name = data.get("license") or card_data.get("license")
             downloads = data.get("downloads")
+            metadata_json = {
+                "pipeline_tag": pipeline_tag,
+                "supported": supported,
+                "unsupported_reason": unsupported_reason,
+            }
             _upsert_catalog_entry(
                 db,
                 model_id=f"hf:{raw_id}",
@@ -442,7 +475,7 @@ def recon_model(model_id: str) -> bool:
                 source_url=f"https://huggingface.co/{raw_id}",
                 schema_source=schema_source,
                 schema_version=data.get("sha"),
-                metadata_json={"pipeline_tag": pipeline_tag},
+                metadata_json=metadata_json,
             )
             db.commit()
             return True
@@ -456,6 +489,9 @@ def recon_model(model_id: str) -> bool:
             latest_version = model.get("latest_version") or {}
             version_id = latest_version.get("id")
             schema, schema_source, schema_version, metadata = _schema_from_replicate_model(owner, name)
+            metadata_json = dict(metadata or {})
+            metadata_json.setdefault("supported", True)
+            metadata_json.setdefault("unsupported_reason", None)
             _upsert_catalog_entry(
                 db,
                 model_id=f"replicate:{owner}/{name}",
@@ -475,7 +511,7 @@ def recon_model(model_id: str) -> bool:
                 source_url=model.get("url"),
                 schema_source=schema_source,
                 schema_version=schema_version,
-                metadata_json=metadata,
+                metadata_json=metadata_json,
             )
             db.commit()
             return True

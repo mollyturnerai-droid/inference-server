@@ -198,6 +198,10 @@ async def mount_catalog_model(
                 detail=f"Model '{request.catalog_id}' not found in catalog"
             )
 
+    if getattr(catalog_model, "supported", True) is False:
+        reason = getattr(catalog_model, "unsupported_reason", None) or "Model is not supported by this server"
+        raise HTTPException(status_code=400, detail=reason)
+
     # Use provided name or catalog name
     model_name = request.name or catalog_model.id
 

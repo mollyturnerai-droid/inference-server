@@ -33,6 +33,8 @@ class CatalogModel(BaseModel):
     last_synced_at: Optional[datetime] = None
     latest_update: Optional[datetime] = None
     prediction_count: int = 0
+    supported: bool = True
+    unsupported_reason: Optional[str] = None
 
 
 # Curated model catalog organized by type
@@ -679,6 +681,7 @@ def _save_catalog(catalog: Dict[str, List[CatalogModel]]):
 
 def _row_to_catalog_model(row: CatalogModelEntry) -> CatalogModel:
     latest_update = row.last_synced_at or row.updated_at
+    metadata = row.metadata_json or {}
     return CatalogModel(
         id=row.id,
         name=row.name,
@@ -700,6 +703,8 @@ def _row_to_catalog_model(row: CatalogModelEntry) -> CatalogModel:
         last_synced_at=row.last_synced_at,
         latest_update=latest_update,
         prediction_count=row.prediction_count or 0,
+        supported=bool(metadata.get("supported", True)),
+        unsupported_reason=metadata.get("unsupported_reason"),
     )
 
 

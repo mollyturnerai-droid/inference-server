@@ -362,6 +362,10 @@ Interactive API documentation is available at:
 pytest tests/
 ```
 
+## TODO
+
+- Add multipart prediction endpoint to accept JSON + binary in a single request (e.g., `/v1/predictions/multipart`).
+
 ### Database Migrations
 
 Create a new migration:
