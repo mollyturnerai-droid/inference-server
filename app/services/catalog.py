@@ -614,6 +614,25 @@ MODEL_CATALOG: Dict[str, List[CatalogModel]] = {
             license="apache-2.0"
         ),
     ],
+    "image-to-image": [
+        CatalogModel(
+            id="qwen-image-edit-2511",
+            name="Qwen Image Edit 2511",
+            description="High-fidelity image editing with character and style consistency. Built on Qwen-Image 20B MMDiT.",
+            model_type=ModelType.IMAGE_TO_IMAGE,
+            model_path="Qwen/Qwen-Image-Edit-2511",
+            size="large",
+            vram_gb=24,
+            recommended_hardware="gpu",
+            tags=["img2img", "editing", "qwen", "consistency"],
+            downloads="N/A",
+            license="apache-2.0",
+            input_schema={
+                "prompt": ModelSchema(type="string", description="Editing instruction"),
+                "image": ModelSchema(type="string", description="Input image URL or data URI")
+            }
+        ),
+    ],
 }
 
 

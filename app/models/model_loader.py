@@ -54,7 +54,8 @@ class ModelLoader:
         model_classes = {
             ModelType.TEXT_GENERATION: TextGenerationModel,
             ModelType.IMAGE_GENERATION: ImageGenerationModel,
-            ModelType.TEXT_TO_IMAGE: ImageGenerationModel,  # Same as image-generation
+            ModelType.TEXT_TO_IMAGE: ImageGenerationModel,
+            ModelType.IMAGE_TO_IMAGE: ImageGenerationModel,
             ModelType.TEXT_TO_SPEECH: TextToSpeechModel,
         }
 
