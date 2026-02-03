@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ModelManifest",
+  "type": "object",
+  "required": [
+    "model_id",
+    "version",
+    "profile",
+    "license",
+    "source",
+    "artifacts",
+    "entrypoint",
+    "requirements",
+    "smoke_test"
+  ],
+  "properties": {
+    "model_id": { "type": "string" },
+    "version": { "type": "string" },
+    "profile": {
+      "type": "string",
+      "enum": [
+        "hf-diffusers-standard",
+        "hf-transformers-standard",
+        "custom-local",
+        "experimental"
+      ]
+    },
+    "license": { "type": "string" },
+    "source": {
+      "type": "object",
+      "required": ["provider", "repo_id", "revision"],
+      "properties": {
+        "provider": { "type": "string", "enum": ["huggingface", "internal", "vendor"] },
+        "repo_id": { "type": "string" },
+        "revision": { "type": "string" }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+          "path": { "type": "string" },
+          "sha256": { "type": "string" }
+        }
+      }
+    },
+    "entrypoint": {
+      "type": "object",
+      "required": ["loader"],
+      "properties": {
+        "loader": { "type": "string", "enum": ["diffusers", "transformers", "custom"] },
+        "class": { "type": "string" },
+        "dtype": { "type": "string" }
+      }
+    },
+    "requirements": {
+      "type": "object",
+      "required": ["python", "packages"],
+      "properties": {
+        "python": { "type": "string" },
+        "packages": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "smoke_test": {
+      "type": "object",
+      "required": ["type", "max_seconds"],
+      "properties": {
+        "type": { "type": "string", "enum": ["image", "text", "audio", "custom"] },
+        "prompt": { "type": "string" },
+        "max_seconds": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}
