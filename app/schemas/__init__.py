@@ -1,5 +1,5 @@
 from .prediction import PredictionInput, PredictionResponse, PredictionStatus, PredictionList
-from .model import ModelCreate, ModelResponse, ModelType, ModelList, ModelSchema
+from .model import ModelCreate, ModelResponse, ModelType, ModelList, ModelSchema, ModelLoadRequest
 from .user import UserCreate, UserResponse, Token, TokenData
 
 __all__ = [
@@ -12,6 +12,7 @@ __all__ = [
     "ModelType",
     "ModelList",
     "ModelSchema",
+    "ModelLoadRequest",
     "UserCreate",
     "UserResponse",
     "Token",
