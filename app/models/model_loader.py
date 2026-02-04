@@ -5,6 +5,7 @@ from .base_model import BaseInferenceModel
 from .text_generation import TextGenerationModel
 from .image_generation import ImageGenerationModel
 from .text_to_speech import TextToSpeechModel
+from .qwen_image_edit import QwenImageEditModel
 import os
 from app.core.config import settings
 
@@ -49,8 +50,13 @@ class ModelLoader:
             lru_model_id = min(self._last_access, key=self._last_access.get)
             self.unload_model(lru_model_id)
 
-    def get_model_class(self, model_type: ModelType) -> type:
+    def get_model_class(self, model_type: ModelType, model_path: str = "") -> type:
         """Get the appropriate model class for a given type"""
+        path_lower = (model_path or "").lower()
+        
+        if model_type == ModelType.IMAGE_TO_IMAGE and "qwen" in path_lower:
+            return QwenImageEditModel
+
         model_classes = {
             ModelType.TEXT_GENERATION: TextGenerationModel,
             ModelType.IMAGE_GENERATION: ImageGenerationModel,
@@ -94,7 +100,7 @@ class ModelLoader:
                 ) from e
             model_class = MagpieTextToSpeechModel
         else:
-            model_class = self.get_model_class(model_type)
+            model_class = self.get_model_class(model_type, model_path)
 
         model = model_class(model_path=model_path, device=device)
         model.load()

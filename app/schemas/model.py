@@ -20,6 +20,7 @@ class ModelType(str, Enum):
 
 
 class ModelSchema(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
     type: str = Field(..., description="Parameter type (string, integer, number, boolean, array)")
     description: Optional[str] = None
     default: Optional[Any] = None
@@ -57,3 +58,10 @@ class ModelResponse(BaseModel):
 
 class ModelList(BaseModel):
     models: List[ModelResponse]
+
+
+class ModelLoadRequest(BaseModel):
+    repo_id: str = Field(..., description="Hugging Face repository ID or model path")
+    force_redownload: bool = Field(default=False)
+    framework: Optional[ModelType] = None
+
