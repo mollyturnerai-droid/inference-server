@@ -54,11 +54,16 @@ class ImageGenerationModel(BaseInferenceModel):
                 logger.info(f"Missing optional components: {missing_optional}")
         
         try:
+            # Get HF token for faster authenticated downloads
+            from app.core.config import settings
+            hf_token = settings.HF_API_TOKEN
+            
             self.pipeline_txt2img = pipeline_cls.from_pretrained(
                 self.model_path,
                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
                 safety_checker=None,
-                requires_safety_checker=False
+                requires_safety_checker=False,
+                token=hf_token
             )
         except Exception as e:
             logger.error(f"Failed to load pipeline from {self.model_path}: {str(e)}")
@@ -88,7 +93,8 @@ class ImageGenerationModel(BaseInferenceModel):
                                 alt_path,
                                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
                                 safety_checker=None,
-                                requires_safety_checker=False
+                                requires_safety_checker=False,
+                                token=hf_token
                             )
                             logger.info(f"Successfully loaded from subdirectory: {alt_path}")
                             self.model_path = alt_path  # Update the model path
@@ -125,11 +131,16 @@ class ImageGenerationModel(BaseInferenceModel):
         logger.info(f"Loading {'SDXL' if self._use_sdxl else 'SD'} img2img pipeline from: {self.model_path}")
         
         try:
+            # Get HF token for faster authenticated downloads
+            from app.core.config import settings
+            hf_token = settings.HF_API_TOKEN
+            
             self.pipeline_img2img = pipeline_cls.from_pretrained(
                 self.model_path,
                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
                 safety_checker=None,
-                requires_safety_checker=False
+                requires_safety_checker=False,
+                token=hf_token
             )
         except Exception as e:
             logger.error(f"Failed to load img2img pipeline from {self.model_path}: {str(e)}")

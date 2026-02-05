@@ -27,11 +27,13 @@ class QwenImageEditModel(BaseInferenceModel):
             )
 
         dtype = torch.float16 if self.device == "cuda" else torch.float32
+        hf_token = settings.HF_API_TOKEN
         
         self.pipe = QwenImageEditPlusPipeline.from_pretrained(
             self.model_path,
             torch_dtype=dtype,
-            trust_remote_code=True
+            trust_remote_code=True,
+            token=hf_token
         )
         
         self.pipe.to(self.device)
