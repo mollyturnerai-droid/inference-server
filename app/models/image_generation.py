@@ -29,14 +29,79 @@ class ImageGenerationModel(BaseInferenceModel):
 
     def load(self):
         """Load a Stable Diffusion model"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         model_path_lower = (self.model_path or "").lower()
         self._use_sdxl = any(token in model_path_lower for token in ["sdxl", "playground", "xl"])
         pipeline_cls = StableDiffusionXLPipeline if self._use_sdxl else StableDiffusionPipeline
 
-        self.pipeline_txt2img = pipeline_cls.from_pretrained(
-            self.model_path,
-            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32
-        )
+        # Log model loading attempt
+        logger.info(f"Loading {'SDXL' if self._use_sdxl else 'SD'} model from: {self.model_path}")
+        
+        # Check if model_path is a local directory and log its contents
+        if os.path.exists(self.model_path):
+            logger.info(f"Model directory exists. Contents: {os.listdir(self.model_path)}")
+            # Check for required components
+            required_components = ["unet", "vae", "tokenizer", "text_encoder", "scheduler"]
+            optional_components = ["safety_checker", "feature_extractor", "image_encoder"]
+            missing_required = [c for c in required_components if not os.path.exists(os.path.join(self.model_path, c))]
+            missing_optional = [c for c in optional_components if not os.path.exists(os.path.join(self.model_path, c))]
+            
+            if missing_required:
+                logger.warning(f"Missing required components: {missing_required}")
+            if missing_optional:
+                logger.info(f"Missing optional components: {missing_optional}")
+        
+        try:
+            self.pipeline_txt2img = pipeline_cls.from_pretrained(
+                self.model_path,
+                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                safety_checker=None,
+                requires_safety_checker=False
+            )
+        except Exception as e:
+            logger.error(f"Failed to load pipeline from {self.model_path}: {str(e)}")
+            
+            # Try to provide more helpful error message
+            if "expected" in str(e).lower() and "but only" in str(e).lower():
+                logger.error(
+                    "The model directory appears to be incomplete or corrupted. "
+                    "Please ensure all required components (unet, vae, tokenizer, text_encoder, scheduler) "
+                    "are present in the model directory."
+                )
+                
+                # Try alternative loading strategies
+                logger.info("Attempting alternative loading strategies...")
+                
+                # Strategy 1: Try loading from subdirectories if they exist
+                if os.path.exists(self.model_path):
+                    subdirs = [d for d in os.listdir(self.model_path) if os.path.isdir(os.path.join(self.model_path, d))]
+                    logger.info(f"Found subdirectories: {subdirs}")
+                    
+                    # Check if there's a single subdirectory that might be the actual model
+                    if len(subdirs) == 1:
+                        alt_path = os.path.join(self.model_path, subdirs[0])
+                        logger.info(f"Trying to load from subdirectory: {alt_path}")
+                        try:
+                            self.pipeline_txt2img = pipeline_cls.from_pretrained(
+                                alt_path,
+                                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                                safety_checker=None,
+                                requires_safety_checker=False
+                            )
+                            logger.info(f"Successfully loaded from subdirectory: {alt_path}")
+                            self.model_path = alt_path  # Update the model path
+                        except Exception as sub_e:
+                            logger.warning(f"Subdirectory loading also failed: {str(sub_e)}")
+                            raise e  # Raise the original exception
+                    else:
+                        raise e
+                else:
+                    raise e
+            else:
+                raise
+        
         # Silence diffusers tqdm progress output; we report progress via callbacks.
         self.pipeline_txt2img.set_progress_bar_config(disable=True)
         self.pipeline_txt2img = self.pipeline_txt2img.to(self.device)
@@ -44,22 +109,45 @@ class ImageGenerationModel(BaseInferenceModel):
 
         if self.device == "cuda":
             self.pipeline_txt2img.enable_attention_slicing()
+        
+        logger.info(f"Successfully loaded {pipeline_cls.__name__} on {self.device}")
 
     def _get_img2img_pipeline(self):
+        import logging
+        logger = logging.getLogger(__name__)
+        
         if self.pipeline_img2img is not None:
             return self.pipeline_img2img
         pipeline_cls = (
             StableDiffusionXLImg2ImgPipeline if self._use_sdxl else StableDiffusionImg2ImgPipeline
         )
-        self.pipeline_img2img = pipeline_cls.from_pretrained(
-            self.model_path,
-            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32
-        )
+        
+        logger.info(f"Loading {'SDXL' if self._use_sdxl else 'SD'} img2img pipeline from: {self.model_path}")
+        
+        try:
+            self.pipeline_img2img = pipeline_cls.from_pretrained(
+                self.model_path,
+                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                safety_checker=None,
+                requires_safety_checker=False
+            )
+        except Exception as e:
+            logger.error(f"Failed to load img2img pipeline from {self.model_path}: {str(e)}")
+            if "expected" in str(e).lower() and "but only" in str(e).lower():
+                logger.error(
+                    "The model directory appears to be incomplete or corrupted. "
+                    "Please ensure all required components (unet, vae, tokenizer, text_encoder, scheduler) "
+                    "are present in the model directory."
+                )
+            raise
+        
         # Silence diffusers tqdm progress output; we report progress via callbacks.
         self.pipeline_img2img.set_progress_bar_config(disable=True)
         self.pipeline_img2img = self.pipeline_img2img.to(self.device)
         if self.device == "cuda":
             self.pipeline_img2img.enable_attention_slicing()
+        
+        logger.info(f"Successfully loaded {pipeline_cls.__name__} on {self.device}")
         return self.pipeline_img2img
 
     def _load_image(self, image_input: str) -> Image.Image:
