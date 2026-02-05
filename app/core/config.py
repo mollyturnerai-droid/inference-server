@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./inference.db"
     DATABASE_FORCE_IPV4: bool = True
     DATABASE_HOSTADDR: Optional[str] = None
+    DATABASE_POOL_SIZE: int = 5
+    DATABASE_MAX_OVERFLOW: int = 10
+    DATABASE_POOL_RECYCLE: int = 3600  # Recycle connections after 1 hour
+    DATABASE_POOL_TIMEOUT: int = 30
 
     # Authentication
     SECRET_KEY: str = "your-secret-key-change-this"
