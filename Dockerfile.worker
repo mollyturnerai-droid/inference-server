@@ -28,4 +28,4 @@ COPY . .
 RUN mkdir -p /tmp/inference_storage /tmp/model_cache logs
 
 # Run Celery worker
-CMD ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+CMD ["sh", "-c", "celery -A app.workers.celery_app worker --loglevel=info --concurrency=${WORKER_CONCURRENCY:-2} --pool=${CELERY_WORKER_POOL:-solo}"]

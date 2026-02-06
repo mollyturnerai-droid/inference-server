@@ -148,11 +148,20 @@ async def load_model_from_hub(
         # For now, we'll try to find metadata again if we skipped download
         if 'metadata' not in locals():
             metadata = model_resolver.analyze_model(repo_id)
-            
+
+        def infer_model_type() -> ModelType:
+            if request.framework:
+                return request.framework
+            if metadata.framework.value == "diffusers":
+                return ModelType.IMAGE_GENERATION
+            if metadata.framework.value == "transformers":
+                return ModelType.TEXT_GENERATION
+            return ModelType.CUSTOM
+
         db_model = Model(
             name=repo_id.split("/")[-1],
             description=f"Auto-loaded model from {repo_id}",
-            model_type=metadata.framework.value if metadata.framework.value in [t.value for t in ModelType] else ModelType.CUSTOM,
+            model_type=infer_model_type(),
             model_path=repo_id,
             version="1.0.0",
             input_schema={}, # can be populated later
@@ -163,4 +172,3 @@ async def load_model_from_hub(
         db.refresh(db_model)
         
     return db_model
-

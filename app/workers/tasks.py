@@ -6,11 +6,20 @@ from app.schemas import PredictionStatus
 from datetime import datetime
 import logging
 import time
-import torch
 import traceback
 import httpx
 from urllib.parse import urlparse
 from app.core.config import settings
+import multiprocessing as mp
+
+# Ensure CUDA is initialized in a safe process model for workers.
+if settings.ENABLE_GPU:
+    try:
+        mp.set_start_method("spawn", force=True)
+    except RuntimeError:
+        pass
+
+import torch
 
 logger = logging.getLogger(__name__)
 

@@ -32,6 +32,8 @@ wheels/
 # IDE
 .vscode/
 .idea/
+.vite/
+.windsurf/
 *.swp
 *.swo
 *~
@@ -47,6 +49,9 @@ logs/
 # Storage
 storage/
 model_cache/
+test-images/
+test-*.png
+nul
 
 # OS
 .DS_Store

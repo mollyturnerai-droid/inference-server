@@ -19,4 +19,5 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     worker_max_tasks_per_child=50,
     broker_connection_retry_on_startup=True,
+    worker_pool=settings.CELERY_WORKER_POOL,
 )

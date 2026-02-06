@@ -1,0 +1,44 @@
+# AI Model Download Configurations
+models:
+  flux.1-dev:
+    repo_id: "black-forest-labs/FLUX.1-dev"
+    framework: "diffusers"
+    required_files:
+      - "model_index.json"
+      - "text_encoder/config.json"
+      - "vae/config.json"
+      - "transformer/config.json"
+    preferred_method: "hub_api"
+  
+  qwen-image-edit-2511:
+    repo_id: "Qwen/Qwen-Image-Edit-2511"
+    framework: "transformers"
+    required_files:
+      - "config.json"
+      - "generation_config.json"
+      - "tokenizer_config.json"
+    preferred_method: "hub_api"
+  
+  xtts-v2:
+    repo_id: "coqui/XTTS-v2"
+    framework: "custom"
+    required_files:
+      - "config.json"
+      - "model.pth"
+      - "vocab.json"
+    preferred_method: "hub_api"
+
+  instantid:
+    repo_id: "InstantX/InstantID"
+    framework: "custom"
+    required_files:
+      - "ip-adapter.bin"
+    preferred_method: "git_lfs"
+
+download_settings:
+  max_retries: 3
+  retry_delay_seconds: 5
+  timeout_seconds: 300
+  concurrent_downloads: 2
+  cache_dir: "/tmp/model_cache"
+  registry_db: "/tmp/inference_storage/model_registry.db"

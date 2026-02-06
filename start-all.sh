@@ -24,7 +24,7 @@ python3.11 -c "from app.db import engine, Base; Base.metadata.create_all(bind=en
 
 # Start Celery worker in the background
 echo "Starting Celery worker..."
-python3.11 -m celery -A app.workers.celery_app worker --loglevel=info --concurrency=${WORKER_CONCURRENCY:-2} &
+python3.11 -m celery -A app.workers.celery_app worker --loglevel=info --concurrency=${WORKER_CONCURRENCY:-2} --pool=${CELERY_WORKER_POOL:-solo} &
 
 # Start the FastAPI server
 echo "Starting FastAPI server..."

@@ -2,12 +2,9 @@ import time
 from typing import Dict, Optional, Union
 from app.schemas import ModelType
 from .base_model import BaseInferenceModel
-from .text_generation import TextGenerationModel
-from .image_generation import ImageGenerationModel
-from .text_to_speech import TextToSpeechModel
-from .qwen_image_edit import QwenImageEditModel
 import os
 from app.core.config import settings
+from app.core.model_registry import get_registry
 
 
 class ModelLoader:
@@ -51,24 +48,13 @@ class ModelLoader:
             self.unload_model(lru_model_id)
 
     def get_model_class(self, model_type: ModelType, model_path: str = "") -> type:
-        """Get the appropriate model class for a given type"""
-        path_lower = (model_path or "").lower()
+        """Get the appropriate model class for a given type using the registry."""
+        registry = get_registry()
+        model_class = registry.get_model_class(model_path, model_type)
         
-        if model_type == ModelType.IMAGE_TO_IMAGE and "qwen" in path_lower:
-            return QwenImageEditModel
-
-        model_classes = {
-            ModelType.TEXT_GENERATION: TextGenerationModel,
-            ModelType.IMAGE_GENERATION: ImageGenerationModel,
-            ModelType.TEXT_TO_IMAGE: ImageGenerationModel,
-            ModelType.IMAGE_TO_IMAGE: ImageGenerationModel,
-            ModelType.TEXT_TO_SPEECH: TextToSpeechModel,
-        }
-
-        model_class = model_classes.get(model_type)
         if model_class is None:
             raise ValueError(f"Unsupported model type: {model_type}")
-
+        
         return model_class
 
     def load_model(
@@ -78,7 +64,13 @@ class ModelLoader:
         model_path: str,
         hardware: str = "auto"
     ) -> BaseInferenceModel:
-        """Load a model into memory"""
+        """Load a model into memory with validation and resource checking."""
+        import logging
+        from app.core.model_validator import validate_model
+        from app.core.gpu_monitor import get_gpu_monitor
+        
+        logger = logging.getLogger(__name__)
+        
         self._evict_idle()
         if model_id in self.loaded_models:
             self._touch(model_id)
@@ -87,10 +79,41 @@ class ModelLoader:
         if isinstance(model_type, str):
             model_type = ModelType(model_type)
 
+        # Pre-flight validation
+        validation = validate_model(model_path, model_type, hardware)
+        if not validation.is_valid:
+            error_msg = "; ".join(validation.errors)
+            logger.error(f"Model validation failed for {model_path}: {error_msg}")
+            raise ValueError(f"Model validation failed: {error_msg}")
+        
+        if validation.warnings:
+            for warning in validation.warnings:
+                logger.warning(f"Model validation warning for {model_path}: {warning}")
+        
+        # Log detected framework info
+        if validation.metadata.get("framework"):
+            framework_info = validation.metadata["framework"]
+            if framework_info.get("detected"):
+                logger.info(
+                    f"Detected framework for {model_path}: {framework_info.get('framework')} "
+                    f"(pipeline: {framework_info.get('pipeline_class', 'unknown')})"
+                )
+
         device = self._get_device(hardware)
+        
+        # GPU resource check
+        if device == "cuda":
+            gpu = get_gpu_monitor()
+            stats = gpu.get_stats()
+            if stats:
+                logger.info(
+                    f"GPU Memory before loading {model_id}: "
+                    f"{stats.used_gb:.2f}GB used, {stats.free_gb:.2f}GB free"
+                )
 
         self._ensure_capacity_for_new_model()
 
+        # Special case for Magpie TTS (requires NeMo)
         if model_type == ModelType.TEXT_TO_SPEECH and (model_path or "").startswith("nvidia/magpie_tts"):
             try:
                 from .magpie_text_to_speech import MagpieTextToSpeechModel
@@ -102,12 +125,24 @@ class ModelLoader:
         else:
             model_class = self.get_model_class(model_type, model_path)
 
+        logger.info(f"Loading model {model_id} using {model_class.__name__} on {device}")
         model = model_class(model_path=model_path, device=device)
         model.load()
 
         self.loaded_models[model_id] = model
         self._touch(model_id)
         self._enforce_max_loaded()
+        
+        # Log GPU usage after loading
+        if device == "cuda":
+            gpu = get_gpu_monitor()
+            stats = gpu.get_stats()
+            if stats:
+                logger.info(
+                    f"GPU Memory after loading {model_id}: "
+                    f"{stats.used_gb:.2f}GB used, {stats.free_gb:.2f}GB free"
+                )
+        
         return model
 
     def unload_model(self, model_id: str):

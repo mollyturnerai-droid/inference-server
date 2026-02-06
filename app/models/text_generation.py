@@ -12,14 +12,16 @@ class TextGenerationModel(BaseInferenceModel):
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.model_path, 
             trust_remote_code=True,
-            token=hf_token
+            token=hf_token,
+            cache_dir=settings.MODEL_CACHE_DIR
         )
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_path,
             device_map=self.device if self.device != "cpu" else None,
             torch_dtype="auto",
             trust_remote_code=True,
-            token=hf_token
+            token=hf_token,
+            cache_dir=settings.MODEL_CACHE_DIR
         )
 
         if self.device == "cpu":

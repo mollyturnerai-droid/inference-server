@@ -53,18 +53,24 @@ class ImageGenerationModel(BaseInferenceModel):
             if missing_optional:
                 logger.info(f"Missing optional components: {missing_optional}")
         
-        try:
-            # Get HF token for faster authenticated downloads
+        def _load_pipeline(force_download: bool = False):
             from app.core.config import settings
             hf_token = settings.HF_API_TOKEN
-            
-            self.pipeline_txt2img = pipeline_cls.from_pretrained(
-                self.model_path,
+            kwargs = dict(
                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
                 safety_checker=None,
                 requires_safety_checker=False,
-                token=hf_token
+                token=hf_token,
+                cache_dir=settings.MODEL_CACHE_DIR,
+                resume_download=True,
+                local_files_only=False,
             )
+            if force_download and not os.path.exists(self.model_path):
+                kwargs["force_download"] = True
+            return pipeline_cls.from_pretrained(self.model_path, **kwargs)
+
+        try:
+            self.pipeline_txt2img = _load_pipeline()
         except Exception as e:
             logger.error(f"Failed to load pipeline from {self.model_path}: {str(e)}")
             
@@ -75,11 +81,20 @@ class ImageGenerationModel(BaseInferenceModel):
                     "Please ensure all required components (unet, vae, tokenizer, text_encoder, scheduler) "
                     "are present in the model directory."
                 )
-                
+
                 # Try alternative loading strategies
                 logger.info("Attempting alternative loading strategies...")
-                
-                # Strategy 1: Try loading from subdirectories if they exist
+
+                # Strategy 1: Force re-download into cache
+                if not os.path.exists(self.model_path):
+                    try:
+                        self.pipeline_txt2img = _load_pipeline(force_download=True)
+                        logger.info("Successfully re-downloaded model from hub")
+                        return
+                    except Exception as retry_e:
+                        logger.warning(f"Force download failed: {str(retry_e)}")
+
+                # Strategy 2: Try loading from subdirectories if they exist
                 if os.path.exists(self.model_path):
                     subdirs = [d for d in os.listdir(self.model_path) if os.path.isdir(os.path.join(self.model_path, d))]
                     logger.info(f"Found subdirectories: {subdirs}")
@@ -94,10 +109,14 @@ class ImageGenerationModel(BaseInferenceModel):
                                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
                                 safety_checker=None,
                                 requires_safety_checker=False,
-                                token=hf_token
+                                token=settings.HF_API_TOKEN,
+                                cache_dir=settings.MODEL_CACHE_DIR,
+                                resume_download=True,
+                                local_files_only=False,
                             )
                             logger.info(f"Successfully loaded from subdirectory: {alt_path}")
                             self.model_path = alt_path  # Update the model path
+                            return
                         except Exception as sub_e:
                             logger.warning(f"Subdirectory loading also failed: {str(sub_e)}")
                             raise e  # Raise the original exception
@@ -130,18 +149,24 @@ class ImageGenerationModel(BaseInferenceModel):
         
         logger.info(f"Loading {'SDXL' if self._use_sdxl else 'SD'} img2img pipeline from: {self.model_path}")
         
-        try:
-            # Get HF token for faster authenticated downloads
+        def _load_img2img(force_download: bool = False):
             from app.core.config import settings
             hf_token = settings.HF_API_TOKEN
-            
-            self.pipeline_img2img = pipeline_cls.from_pretrained(
-                self.model_path,
+            kwargs = dict(
                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
                 safety_checker=None,
                 requires_safety_checker=False,
-                token=hf_token
+                token=hf_token,
+                cache_dir=settings.MODEL_CACHE_DIR,
+                resume_download=True,
+                local_files_only=False,
             )
+            if force_download and not os.path.exists(self.model_path):
+                kwargs["force_download"] = True
+            return pipeline_cls.from_pretrained(self.model_path, **kwargs)
+
+        try:
+            self.pipeline_img2img = _load_img2img()
         except Exception as e:
             logger.error(f"Failed to load img2img pipeline from {self.model_path}: {str(e)}")
             if "expected" in str(e).lower() and "but only" in str(e).lower():
@@ -150,6 +175,13 @@ class ImageGenerationModel(BaseInferenceModel):
                     "Please ensure all required components (unet, vae, tokenizer, text_encoder, scheduler) "
                     "are present in the model directory."
                 )
+                if not os.path.exists(self.model_path):
+                    try:
+                        self.pipeline_img2img = _load_img2img(force_download=True)
+                        logger.info("Successfully re-downloaded img2img pipeline from hub")
+                        return self.pipeline_img2img
+                    except Exception as retry_e:
+                        logger.warning(f"Force download for img2img failed: {str(retry_e)}")
             raise
         
         # Silence diffusers tqdm progress output; we report progress via callbacks.
