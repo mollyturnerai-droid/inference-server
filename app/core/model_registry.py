@@ -69,6 +69,7 @@ def _initialize_default_registry(registry: ModelRegistry):
     # Import here to avoid circular dependencies
     from app.models.text_generation import TextGenerationModel
     from app.models.image_generation import ImageGenerationModel
+    from app.models.qwen_image_generation import QwenImageGenerationModel
     from app.models.text_to_speech import TextToSpeechModel
     from app.models.qwen_image_edit import QwenImageEditModel
     from app.schemas import ModelType
@@ -81,6 +82,12 @@ def _initialize_default_registry(registry: ModelRegistry):
     registry.register(ModelType.TEXT_TO_SPEECH, TextToSpeechModel)
     
     # Register custom matchers for specialized models
+    def is_qwen_image_generation(model_path: str, model_type: ModelType) -> bool:
+        return (
+            model_type in (ModelType.TEXT_TO_IMAGE, ModelType.IMAGE_GENERATION)
+            and "qwen-image" in (model_path or "").lower()
+        )
+
     def is_qwen_image_edit(model_path: str, model_type: ModelType) -> bool:
         """Matcher for Qwen image editing models."""
         return (
@@ -89,4 +96,5 @@ def _initialize_default_registry(registry: ModelRegistry):
             and "edit" in model_path.lower()
         )
     
+    registry.register_matcher(is_qwen_image_generation, QwenImageGenerationModel)
     registry.register_matcher(is_qwen_image_edit, QwenImageEditModel)

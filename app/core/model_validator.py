@@ -110,6 +110,14 @@ class ModelValidator:
             info["framework"] = "diffusers"
             info["pipeline_class"] = "QwenImageEditPlusPipeline"
             return info
+
+        # Qwen Image generation models are diffusers-based (not Qwen LLMs).
+        # Example: Qwen/Qwen-Image-2512
+        if "qwen-image" in repo_lower:
+            info["detected"] = True
+            info["framework"] = "diffusers"
+            info["pipeline_class"] = "DiffusionPipeline"
+            return info
         
         # FLUX models use diffusers
         if "flux" in repo_lower:
