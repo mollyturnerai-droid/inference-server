@@ -29,3 +29,9 @@ def test_system_status_with_master_key(client, api_key):
     data = r.json()
     assert "services" in data
     assert "database" in data["services"]
+
+
+def test_mcp_mount_enabled(client_mcp_enabled, api_key):
+    # Avoid opening the SSE stream; instead hit the messages endpoint which should exist when mounted.
+    r = client_mcp_enabled.post("/mcp/messages/", headers={"X-API-Key": api_key}, json={})
+    assert r.status_code in (400, 401, 405, 422)

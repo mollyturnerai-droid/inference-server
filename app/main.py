@@ -300,6 +300,96 @@ async def hf_status(principal=Depends(get_current_api_key)):
 # Include API routes
 app.include_router(api_router, prefix="/v1")
 
+# Optional MCP server mounted under /mcp (SSE transport).
+# This allows IDEs/agents to interact with the server via MCP without exposing a separate gateway port.
+if settings.ENABLE_MCP:
+    try:
+        import base64
+        from typing import Any, Dict, Optional
+
+        from mcp.server.fastmcp import FastMCP
+        from mcp_gateway.sse import create_sse_server
+
+        _MCP_BASE_URL = f"http://127.0.0.1:{settings.API_PORT}".rstrip("/")
+        _MCP_TIMEOUT_S = float(getattr(settings, "DEFAULT_TIMEOUT", 300) or 300)
+
+        mcp = FastMCP("InferenceServer")
+        app.mount("/mcp", create_sse_server(mcp))
+
+        def _coerce_json(value: Any) -> Any:
+            if value is None:
+                return None
+            if isinstance(value, (dict, list, str, int, float, bool)):
+                return value
+            import json as _json
+            return _json.loads(_json.dumps(value, default=str))
+
+        @mcp.tool()
+        async def inference_api_request(
+            authorization: str,
+            method: str,
+            path: str,
+            query: Optional[Dict[str, Any]] = None,
+            json_body: Optional[Any] = None,
+            headers: Optional[Dict[str, str]] = None,
+        ) -> Dict[str, Any]:
+            """Proxy a request to the local Inference Server API.
+
+            Provide `authorization` as a full header value (e.g. "Bearer <api_key>").
+            """
+            if not path.startswith("/"):
+                path = "/" + path
+            url = f"{_MCP_BASE_URL}{path}"
+
+            h = {"Authorization": authorization}
+            if headers:
+                h.update({str(k): str(v) for k, v in headers.items()})
+
+            timeout = httpx.Timeout(_MCP_TIMEOUT_S)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.request(
+                    method.upper(),
+                    url,
+                    params=query,
+                    headers=h,
+                    json=json_body,
+                )
+
+            content_type = resp.headers.get("content-type", "")
+            out: Dict[str, Any] = {
+                "status_code": resp.status_code,
+                "headers": {k: v for k, v in resp.headers.items() if k.lower() in ("content-type",)},
+            }
+            if "application/json" in content_type:
+                try:
+                    out["json"] = resp.json()
+                except Exception:
+                    out["text"] = resp.text
+            else:
+                out["text"] = resp.text
+            return _coerce_json(out)
+
+        @mcp.tool()
+        async def files_upload_base64(
+            authorization: str,
+            filename: str,
+            content_base64: str,
+            content_type: str = "application/octet-stream",
+        ) -> Dict[str, Any]:
+            """Upload a file to /v1/files/upload using base64 content."""
+            raw = base64.b64decode(content_base64)
+            files = {"file": (filename, raw, content_type)}
+
+            url = f"{_MCP_BASE_URL}/v1/files/upload"
+            timeout = httpx.Timeout(_MCP_TIMEOUT_S)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.post(url, headers={"Authorization": authorization}, files=files)
+            return _coerce_json({"status_code": resp.status_code, "text": resp.text})
+
+    except Exception as _exc:
+        # Don't fail the API if MCP isn't available in a given environment.
+        print(f"Warning: MCP server disabled due to import/runtime error: {_exc}")
+
 
 if __name__ == "__main__":
     import uvicorn

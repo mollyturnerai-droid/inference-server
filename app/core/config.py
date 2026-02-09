@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     DEFAULT_TIMEOUT: int = 300
     MAX_BATCH_SIZE: int = 8
     ENABLE_GPU: bool = True
+    ENABLE_MCP: bool = False
 
     CATALOG_PATH: str = "/tmp/model_catalog.json"
     CATALOG_ADMIN_TOKEN: Optional[str] = None

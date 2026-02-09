@@ -17,6 +17,7 @@ def _fresh_import_app(monkeypatch, *, tmp_path):
     monkeypatch.setenv("RECON_ENABLED", "false")
     monkeypatch.setenv("RECON_ON_STARTUP", "false")
     monkeypatch.setenv("ENABLE_GPU", "false")
+    monkeypatch.setenv("ENABLE_MCP", "false")
 
     db_path = tmp_path / "test.db"
     storage_path = tmp_path / "storage"
@@ -41,6 +42,13 @@ def _fresh_import_app(monkeypatch, *, tmp_path):
 
 @pytest.fixture()
 def client(monkeypatch, tmp_path):
+    app = _fresh_import_app(monkeypatch, tmp_path=tmp_path)
+    return TestClient(app)
+
+
+@pytest.fixture()
+def client_mcp_enabled(monkeypatch, tmp_path):
+    monkeypatch.setenv("ENABLE_MCP", "true")
     app = _fresh_import_app(monkeypatch, tmp_path=tmp_path)
     return TestClient(app)
 
