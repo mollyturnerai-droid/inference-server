@@ -23,18 +23,23 @@ class QwenImageGenerationModel(BaseInferenceModel):
 
     def load(self):
         try:
-            from diffusers import DiffusionPipeline
-        except Exception as exc:
-            raise RuntimeError(
-                "Qwen image generation requires 'diffusers' (new enough to support Qwen Image)."
-            ) from exc
+            # Prefer the explicit pipeline when present, else rely on auto pipeline dispatch.
+            from diffusers import QwenImagePipeline as _Pipeline  # type: ignore
+        except Exception:
+            try:
+                from diffusers import DiffusionPipeline as _Pipeline  # type: ignore
+            except Exception as exc:
+                raise RuntimeError(
+                    "Qwen image generation requires 'diffusers' (new enough to support Qwen Image)."
+                ) from exc
 
         hf_token = settings.HF_API_TOKEN
         dtype = torch.bfloat16 if self.device == "cuda" else torch.float32
 
-        self.pipe = DiffusionPipeline.from_pretrained(
+        self.pipe = _Pipeline.from_pretrained(
             self.model_path,
             torch_dtype=dtype,
+            trust_remote_code=True,
             token=hf_token,
             cache_dir=settings.MODEL_CACHE_DIR,
             resume_download=True,
@@ -120,4 +125,3 @@ class QwenImageGenerationModel(BaseInferenceModel):
         self.model = None
         if self.device == "cuda":
             torch.cuda.empty_cache()
-
