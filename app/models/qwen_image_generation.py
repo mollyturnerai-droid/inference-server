@@ -46,6 +46,8 @@ class QwenImageGenerationModel(BaseInferenceModel):
                 local_files_only=False,
             )
             if transformer_override is not None:
+                # Some pipelines use a diffusers "transformer" component; keep for compatibility,
+                # but QwenImagePipeline's transformer-like weights may not be a transformers.PreTrainedModel.
                 kwargs["transformer"] = transformer_override
             return _Pipeline.from_pretrained(self.model_path, **kwargs)
 
@@ -56,7 +58,7 @@ class QwenImageGenerationModel(BaseInferenceModel):
             placeholder_err = ("qwen2_5_vl" in msg and "Placeholder" in msg)
             dict_cfg_err = ("'dict' object has no attribute 'to_dict'" in msg)
             if placeholder_err or dict_cfg_err:
-                # Work around transformers config bugs by pre-loading the transformer component with a sanitized
+                # Work around transformers config bugs by pre-loading the *text_encoder* component with a sanitized
                 # config and injecting it into the diffusers pipeline.
                 try:
                     from transformers import AutoConfig, PretrainedConfig  # type: ignore
@@ -64,7 +66,7 @@ class QwenImageGenerationModel(BaseInferenceModel):
 
                     config = AutoConfig.from_pretrained(
                         self.model_path,
-                        subfolder="transformer",
+                        subfolder="text_encoder",
                         token=hf_token,
                         cache_dir=settings.MODEL_CACHE_DIR,
                     )
@@ -74,16 +76,25 @@ class QwenImageGenerationModel(BaseInferenceModel):
                         if hasattr(config, attr) and isinstance(getattr(config, attr), dict):
                             setattr(config, attr, PretrainedConfig.from_dict(getattr(config, attr)))
 
-                    transformer = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                    text_encoder = Qwen2_5_VLForConditionalGeneration.from_pretrained(
                         self.model_path,
-                        subfolder="transformer",
+                        subfolder="text_encoder",
                         config=config,
                         torch_dtype=dtype,
                         token=hf_token,
                         cache_dir=settings.MODEL_CACHE_DIR,
                     )
 
-                    self.pipe = _load_pipeline(transformer_override=transformer)
+                    # Inject the already-loaded transformers model to bypass diffusers component loading.
+                    self.pipe = _Pipeline.from_pretrained(
+                        self.model_path,
+                        torch_dtype=dtype,
+                        token=hf_token,
+                        cache_dir=settings.MODEL_CACHE_DIR,
+                        resume_download=True,
+                        local_files_only=False,
+                        text_encoder=text_encoder,
+                    )
                 except Exception as exc2:
                     raise RuntimeError(
                         "Failed to load Qwen Image pipeline. Ensure 'diffusers>=0.36', "
