@@ -40,3 +40,7 @@ safetensors==0.5.3
 omegaconf
 pyloudnorm
 
+# Vision-language / Qwen Image stack
+einops
+timm
+sentencepiece

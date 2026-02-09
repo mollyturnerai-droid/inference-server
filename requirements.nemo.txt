@@ -38,6 +38,11 @@ pyloudnorm
 # Qwen VL utilities (required by Qwen2.5-VL components used by Qwen Image pipelines)
 qwen-vl-utils
 
+# Vision-language / Qwen Image stack
+einops
+timm
+sentencepiece
+
 # NeMo (Magpie TTS)
 nemo-toolkit[tts]==2.6.1
 kaldialign

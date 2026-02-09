@@ -38,3 +38,8 @@ conformer==0.3.2
 safetensors==0.5.3
 omegaconf
 pyloudnorm
+
+# Vision-language / Qwen Image stack
+einops
+timm
+sentencepiece

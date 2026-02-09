@@ -36,15 +36,25 @@ class QwenImageGenerationModel(BaseInferenceModel):
         hf_token = settings.HF_API_TOKEN
         dtype = torch.bfloat16 if self.device == "cuda" else torch.float32
 
-        self.pipe = _Pipeline.from_pretrained(
-            self.model_path,
-            torch_dtype=dtype,
-            trust_remote_code=True,
-            token=hf_token,
-            cache_dir=settings.MODEL_CACHE_DIR,
-            resume_download=True,
-            local_files_only=False,
-        )
+        try:
+            self.pipe = _Pipeline.from_pretrained(
+                self.model_path,
+                torch_dtype=dtype,
+                trust_remote_code=True,
+                token=hf_token,
+                cache_dir=settings.MODEL_CACHE_DIR,
+                resume_download=True,
+                local_files_only=False,
+            )
+        except Exception as exc:
+            msg = str(exc)
+            if "qwen2_5_vl" in msg and "Placeholder" in msg:
+                raise RuntimeError(
+                    "Failed to load Qwen Image pipeline due to missing/invalid Qwen2.5-VL transformer components. "
+                    "Ensure the runtime includes recent 'transformers' and common VL deps: "
+                    "einops, timm, sentencepiece, qwen-vl-utils."
+                ) from exc
+            raise
         self.pipe.set_progress_bar_config(disable=True)
         self.pipe = self.pipe.to(self.device)
         self.model = self.pipe
