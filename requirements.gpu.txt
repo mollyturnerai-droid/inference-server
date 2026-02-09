@@ -44,3 +44,4 @@ pyloudnorm
 einops
 timm
 sentencepiece
+qwen-vl-utils
