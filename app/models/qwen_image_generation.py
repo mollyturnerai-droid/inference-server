@@ -36,25 +36,62 @@ class QwenImageGenerationModel(BaseInferenceModel):
         hf_token = settings.HF_API_TOKEN
         dtype = torch.bfloat16 if self.device == "cuda" else torch.float32
 
-        try:
-            self.pipe = _Pipeline.from_pretrained(
-                self.model_path,
+        def _load_pipeline(transformer_override=None):
+            kwargs = dict(
                 torch_dtype=dtype,
-                trust_remote_code=True,
+                trust_remote_code=True,  # ignored by some pipeline classes; safe to pass
                 token=hf_token,
                 cache_dir=settings.MODEL_CACHE_DIR,
                 resume_download=True,
                 local_files_only=False,
             )
+            if transformer_override is not None:
+                kwargs["transformer"] = transformer_override
+            return _Pipeline.from_pretrained(self.model_path, **kwargs)
+
+        try:
+            self.pipe = _load_pipeline()
         except Exception as exc:
             msg = str(exc)
-            if "qwen2_5_vl" in msg and "Placeholder" in msg:
-                raise RuntimeError(
-                    "Failed to load Qwen Image pipeline due to missing/invalid Qwen2.5-VL transformer components. "
-                    "Ensure the runtime includes recent 'transformers' and common VL deps: "
-                    "einops, timm, sentencepiece, qwen-vl-utils."
-                ) from exc
-            raise
+            placeholder_err = ("qwen2_5_vl" in msg and "Placeholder" in msg)
+            dict_cfg_err = ("'dict' object has no attribute 'to_dict'" in msg)
+            if placeholder_err or dict_cfg_err:
+                # Work around transformers config bugs by pre-loading the transformer component with a sanitized
+                # config and injecting it into the diffusers pipeline.
+                try:
+                    from transformers import AutoConfig, PretrainedConfig  # type: ignore
+                    from transformers import Qwen2_5_VLForConditionalGeneration  # type: ignore
+
+                    config = AutoConfig.from_pretrained(
+                        self.model_path,
+                        subfolder="transformer",
+                        token=hf_token,
+                        cache_dir=settings.MODEL_CACHE_DIR,
+                    )
+
+                    # Normalize nested configs that sometimes come back as raw dicts.
+                    for attr in ("text_config", "vision_config", "decoder_config"):
+                        if hasattr(config, attr) and isinstance(getattr(config, attr), dict):
+                            setattr(config, attr, PretrainedConfig.from_dict(getattr(config, attr)))
+
+                    transformer = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                        self.model_path,
+                        subfolder="transformer",
+                        config=config,
+                        torch_dtype=dtype,
+                        token=hf_token,
+                        cache_dir=settings.MODEL_CACHE_DIR,
+                    )
+
+                    self.pipe = _load_pipeline(transformer_override=transformer)
+                except Exception as exc2:
+                    raise RuntimeError(
+                        "Failed to load Qwen Image pipeline. Ensure 'diffusers>=0.36', "
+                        "'transformers' supporting Qwen2.5-VL, and deps: einops, timm, sentencepiece, qwen-vl-utils. "
+                        f"Original error: {msg}"
+                    ) from exc2
+            else:
+                raise
         self.pipe.set_progress_bar_config(disable=True)
         self.pipe = self.pipe.to(self.device)
         self.model = self.pipe
