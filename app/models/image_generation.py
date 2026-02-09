@@ -57,13 +57,14 @@ class ImageGenerationModel(BaseInferenceModel):
             hf_token = settings.HF_API_TOKEN
             kwargs = dict(
                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                safety_checker=None,
-                requires_safety_checker=False,
                 token=hf_token,
                 cache_dir=settings.MODEL_CACHE_DIR,
                 resume_download=True,
                 local_files_only=False,
             )
+            if settings.DISABLE_SAFETY_CHECKER:
+                kwargs["safety_checker"] = None
+                kwargs["requires_safety_checker"] = False
             if force_download and not os.path.exists(self.model_path):
                 kwargs["force_download"] = True
             return pipeline_cls.from_pretrained(self.model_path, **kwargs)
@@ -103,15 +104,18 @@ class ImageGenerationModel(BaseInferenceModel):
                         alt_path = os.path.join(self.model_path, subdirs[0])
                         logger.info(f"Trying to load from subdirectory: {alt_path}")
                         try:
-                            self.pipeline_txt2img = pipeline_cls.from_pretrained(
-                                alt_path,
+                            alt_kwargs = dict(
                                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                                safety_checker=None,
-                                requires_safety_checker=False,
                                 token=settings.HF_API_TOKEN,
                                 cache_dir=settings.MODEL_CACHE_DIR,
                                 resume_download=True,
                                 local_files_only=False,
+                            )
+                            if settings.DISABLE_SAFETY_CHECKER:
+                                alt_kwargs["safety_checker"] = None
+                                alt_kwargs["requires_safety_checker"] = False
+                            self.pipeline_txt2img = pipeline_cls.from_pretrained(
+                                alt_path, **alt_kwargs,
                             )
                             logger.info(f"Successfully loaded from subdirectory: {alt_path}")
                             self.model_path = alt_path  # Update the model path
@@ -153,13 +157,14 @@ class ImageGenerationModel(BaseInferenceModel):
             hf_token = settings.HF_API_TOKEN
             kwargs = dict(
                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                safety_checker=None,
-                requires_safety_checker=False,
                 token=hf_token,
                 cache_dir=settings.MODEL_CACHE_DIR,
                 resume_download=True,
                 local_files_only=False,
             )
+            if settings.DISABLE_SAFETY_CHECKER:
+                kwargs["safety_checker"] = None
+                kwargs["requires_safety_checker"] = False
             if force_download and not os.path.exists(self.model_path):
                 kwargs["force_download"] = True
             return pipeline_cls.from_pretrained(self.model_path, **kwargs)
@@ -198,6 +203,7 @@ class ImageGenerationModel(BaseInferenceModel):
             storage_path=settings.STORAGE_PATH,
             api_base_url=settings.API_BASE_URL,
             timeout_s=30.0,
+            allow_private=settings.ALLOW_PRIVATE_URL_FETCH,
         )
 
     def _apply_vram_limits(self, width: int, height: int, steps: int):

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Request, status
@@ -54,7 +54,7 @@ def authenticate_api_key(raw: str, db: Session) -> Optional[ApiKeyPrincipal]:
         return None
 
     try:
-        row.last_used_at = datetime.utcnow()
+        row.last_used_at = datetime.now(timezone.utc)
         db.commit()
     except Exception:
         db.rollback()

@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -11,21 +13,54 @@ from app.services.auth import get_current_api_key, extract_api_key, authenticate
 from app.services.recon import start_recon_scheduler
 from sqlalchemy.engine.url import make_url
 import httpx
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Create database tables (only if database is available)
 try:
     Base.metadata.create_all(bind=engine)
-    # Ensure new prediction progress columns exist (for existing DBs)
-    from sqlalchemy import text
-    with engine.connect() as conn:
-        conn.execute(text("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS progress DOUBLE PRECISION"))
-        conn.execute(text("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS progress_step INTEGER"))
-        conn.execute(text("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS progress_total INTEGER"))
-        conn.execute(text("ALTER TABLE catalog_models ADD COLUMN IF NOT EXISTS prediction_count INTEGER DEFAULT 0"))
-        conn.commit()
 except Exception as e:
-    print(f"Warning: Could not create database tables: {e}")
+    logger.warning(f"Could not create database tables: {e}")
     print("Database will be initialized when connection is available")
+
+
+def _check_db_status():
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return "healthy"
+    except Exception as e:
+        return f"unavailable: {str(e)[:100]}"
+
+
+def _check_redis_status():
+    try:
+        import redis
+        r = redis.Redis(
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+            password=settings.REDIS_PASSWORD,
+            db=settings.REDIS_DB
+        )
+        r.ping()
+        return "healthy"
+    except Exception as e:
+        return f"unavailable: {str(e)[:100]}"
+
+
+def _check_gpu_status():
+    try:
+        import torch
+        if torch.cuda.is_available():
+            gpu_count = torch.cuda.device_count()
+            gpu_name = torch.cuda.get_device_name(0) if gpu_count > 0 else "N/A"
+            return f"available: {gpu_count} GPU(s) - {gpu_name}"
+        else:
+            return "unavailable: No CUDA devices found"
+    except Exception as e:
+        return f"unavailable: {str(e)[:100]}"
 
 
 def _get_client_ip(request: Request) -> str:
@@ -42,11 +77,19 @@ def _get_client_ip(request: Request) -> str:
 # Initialize rate limiter
 limiter = Limiter(key_func=_get_client_ip)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    start_recon_scheduler()
+    yield
+
+
 # Create FastAPI app
 app = FastAPI(
     title="Inference Server",
     description="A full-featured ML inference engine",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.state.mcp = {
@@ -54,10 +97,6 @@ app.state.mcp = {
     "mounted": False,
     "error": None,
 }
-
-@app.on_event("startup")
-def _start_recon():
-    start_recon_scheduler()
 
 # Add rate limiting
 app.state.limiter = limiter
@@ -136,49 +175,12 @@ async def health():
 @app.get("/health/detailed")
 async def health_detailed():
     """Detailed health check with service status"""
-    from app.db import engine
-    import redis
-
     status = {
         "api": "healthy",
-        "database": "unknown",
-        "redis": "unknown",
-        "gpu": "unknown"
+        "database": _check_db_status(),
+        "redis": _check_redis_status(),
+        "gpu": _check_gpu_status(),
     }
-
-    # Check database
-    try:
-        from sqlalchemy import text
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        status["database"] = "healthy"
-    except Exception as e:
-        status["database"] = f"unavailable: {str(e)[:100]}"
-
-    # Check Redis
-    try:
-        r = redis.Redis(
-            host=settings.REDIS_HOST,
-            port=settings.REDIS_PORT,
-            password=settings.REDIS_PASSWORD,
-            db=settings.REDIS_DB
-        )
-        r.ping()
-        status["redis"] = "healthy"
-    except Exception as e:
-        status["redis"] = f"unavailable: {str(e)[:100]}"
-
-    # Check GPU
-    try:
-        import torch
-        if torch.cuda.is_available():
-            gpu_count = torch.cuda.device_count()
-            gpu_name = torch.cuda.get_device_name(0) if gpu_count > 0 else "N/A"
-            status["gpu"] = f"available: {gpu_count} GPU(s) - {gpu_name}"
-        else:
-            status["gpu"] = "unavailable: No CUDA devices found"
-    except Exception as e:
-        status["gpu"] = f"unavailable: {str(e)[:100]}"
 
     overall_status = "healthy" if status["database"] == "healthy" else "degraded"
 
@@ -195,47 +197,14 @@ async def health_detailed():
 
 @app.get("/v1/system/status")
 async def system_status(principal=Depends(get_current_api_key)):
-    from app.db import engine
     from app.models.model_loader import model_loader
-    import redis
 
     status = {
-        "database": "unknown",
-        "redis": "unknown",
-        "gpu": "unknown",
+        "database": _check_db_status(),
+        "redis": _check_redis_status(),
+        "gpu": _check_gpu_status(),
         "loaded_models": [],
     }
-
-    try:
-        from sqlalchemy import text
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        status["database"] = "healthy"
-    except Exception as e:
-        status["database"] = f"unavailable: {str(e)[:100]}"
-
-    try:
-        r = redis.Redis(
-            host=settings.REDIS_HOST,
-            port=settings.REDIS_PORT,
-            password=settings.REDIS_PASSWORD,
-            db=settings.REDIS_DB
-        )
-        r.ping()
-        status["redis"] = "healthy"
-    except Exception as e:
-        status["redis"] = f"unavailable: {str(e)[:100]}"
-
-    try:
-        import torch
-        if torch.cuda.is_available():
-            gpu_count = torch.cuda.device_count()
-            gpu_name = torch.cuda.get_device_name(0) if gpu_count > 0 else "N/A"
-            status["gpu"] = f"available: {gpu_count} GPU(s) - {gpu_name}"
-        else:
-            status["gpu"] = "unavailable: No CUDA devices found"
-    except Exception as e:
-        status["gpu"] = f"unavailable: {str(e)[:100]}"
 
     try:
         status["loaded_models"] = list(model_loader.loaded_models.keys())

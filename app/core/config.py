@@ -1,5 +1,11 @@
+import secrets
+
 from pydantic_settings import BaseSettings
 from typing import Optional
+
+
+def _generate_secret_key() -> str:
+    return secrets.token_urlsafe(32)
 
 
 class Settings(BaseSettings):
@@ -23,8 +29,8 @@ class Settings(BaseSettings):
     DATABASE_POOL_RECYCLE: int = 3600  # Recycle connections after 1 hour
     DATABASE_POOL_TIMEOUT: int = 30
 
-    # Authentication
-    SECRET_KEY: str = "your-secret-key-change-this"
+    # Authentication — randomly generated per process when not set via env.
+    SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
@@ -41,7 +47,7 @@ class Settings(BaseSettings):
     API_BASE_URL: str = "http://localhost:8000"
 
     CORS_ALLOW_ORIGINS: str = "*"
-    CORS_ALLOW_CREDENTIALS: bool = True
+    CORS_ALLOW_CREDENTIALS: bool = False
     TRUST_PROXY_HEADERS: bool = False
     WEBHOOK_ALLOWED_HOSTS: Optional[str] = None
 
@@ -52,6 +58,8 @@ class Settings(BaseSettings):
     MAX_MODEL_CACHE_SIZE_GB: int = 50
     MAX_LOADED_MODELS: int = 0
     MODEL_IDLE_TTL_SECONDS: Optional[int] = None
+    TRUST_REMOTE_CODE: bool = False
+    DISABLE_SAFETY_CHECKER: bool = True
 
     BUILD_GIT_SHA: Optional[str] = None
     BUILD_IMAGE_TAG: Optional[str] = None
@@ -71,6 +79,12 @@ class Settings(BaseSettings):
     ENABLE_GPU: bool = True
     ENABLE_MCP: bool = False
 
+    # File upload limit (bytes). Default 50 MB.
+    MAX_UPLOAD_SIZE_BYTES: int = 50 * 1024 * 1024
+
+    # SSRF protection: block requests to private/link-local IP ranges by default.
+    ALLOW_PRIVATE_URL_FETCH: bool = False
+
     CATALOG_PATH: str = "/tmp/model_catalog.json"
     CATALOG_ADMIN_TOKEN: Optional[str] = None
     HF_API_TOKEN: Optional[str] = None
@@ -85,6 +99,17 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"
 
 
 settings = Settings()
+
+# Generate a random secret key if none was provided (safe default).
+if not settings.SECRET_KEY:
+    import logging as _logging
+
+    settings.SECRET_KEY = _generate_secret_key()
+    _logging.getLogger(__name__).warning(
+        "SECRET_KEY was not set — using a random key for this process. "
+        "JWTs will not survive restarts. Set SECRET_KEY in env for persistence."
+    )

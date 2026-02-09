@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from typing import Optional
 from app.db import get_db, Prediction, Model
@@ -10,10 +10,14 @@ router = APIRouter(prefix="/predictions", tags=["Predictions"])
 
 @router.post("/", response_model=PredictionResponse)
 async def create_prediction(
+    request: Request,
     prediction: PredictionInput,
     db: Session = Depends(get_db),
 ):
     """Create a new prediction"""
+    # Rate limit: 10 predictions per minute per client
+    request.app.state.limiter.limit("10/minute")(lambda: None)()
+
     # Verify model exists
     model = db.query(Model).filter(Model.id == prediction.model_id).first()
     if not model:
@@ -33,7 +37,7 @@ async def create_prediction(
     db.refresh(db_prediction)
 
     # Queue inference task
-    run_inference.delay(
+    task = run_inference.delay(
         prediction_id=db_prediction.id,
         model_id=model.id,
         model_type=model.model_type.value,
@@ -47,11 +51,12 @@ async def create_prediction(
 
 @router.post("", response_model=PredictionResponse, include_in_schema=False)
 async def create_prediction_noslash(
+    request: Request,
     prediction: PredictionInput,
     db: Session = Depends(get_db),
 ):
     """Create a new prediction (no trailing slash)"""
-    return await create_prediction(prediction=prediction, db=db)
+    return await create_prediction(request=request, prediction=prediction, db=db)
 
 
 @router.get("/{prediction_id}", response_model=PredictionResponse)
@@ -111,5 +116,12 @@ async def cancel_prediction(
 
     prediction.status = PredictionStatus.CANCELED
     db.commit()
+
+    # Best-effort revoke the Celery task so the worker stops processing.
+    try:
+        from app.workers.celery_app import celery_app
+        celery_app.control.revoke(prediction_id, terminate=True)
+    except Exception:
+        pass
 
     return {"message": "Prediction canceled"}

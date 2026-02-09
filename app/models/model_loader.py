@@ -8,6 +8,15 @@ from app.core.model_registry import get_registry
 
 
 class ModelLoader:
+    """Singleton model loader — instantiated once at module level.
+
+    NOTE: When running with multiple Celery workers or Gunicorn workers each
+    worker process gets its **own** ``model_loader`` instance.  In-memory
+    caches (``loaded_models``, ``_last_access``) are therefore per-process and
+    do **not** share state across workers.  This is intentional for GPU memory
+    isolation but means eviction / capacity limits apply per-worker.
+    """
+
     def __init__(self):
         self.loaded_models: Dict[str, BaseInferenceModel] = {}
         self._last_access: Dict[str, float] = {}

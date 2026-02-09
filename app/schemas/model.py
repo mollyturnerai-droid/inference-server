@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional, Dict, Any, List
+from pydantic import BaseModel, Field, ConfigDict, model_validator
+from typing import Optional, Dict, Any, List, Union
 from datetime import datetime
 from enum import Enum
 
@@ -50,11 +50,25 @@ class ModelResponse(BaseModel):
     model_type: ModelType
     version: str
     model_path: str
-    input_schema: Dict[str, ModelSchema]
+    input_schema: Dict[str, Any] = Field(default_factory=dict)
     hardware: str
     created_at: datetime
     updated_at: datetime
     owner_id: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_input_schema(cls, data: Any) -> Any:
+        """Accept raw dicts from the DB without requiring strict ModelSchema shape."""
+        if hasattr(data, "__dict__"):
+            # ORM model — nothing to coerce at this level
+            return data
+        if isinstance(data, dict):
+            schema = data.get("input_schema")
+            if schema is None:
+                data["input_schema"] = {}
+        return data
+
 
 class ModelList(BaseModel):
     models: List[ModelResponse]
@@ -64,4 +78,3 @@ class ModelLoadRequest(BaseModel):
     repo_id: str = Field(..., description="Hugging Face repository ID or model path")
     force_redownload: bool = Field(default=False)
     framework: Optional[ModelType] = None
-

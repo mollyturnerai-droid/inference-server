@@ -8,10 +8,10 @@ class TextGenerationModel(BaseInferenceModel):
         """Load a text generation model from HuggingFace"""
         from app.core.config import settings
         hf_token = settings.HF_API_TOKEN
-        
+
         self.tokenizer = AutoTokenizer.from_pretrained(
-            self.model_path, 
-            trust_remote_code=True,
+            self.model_path,
+            trust_remote_code=settings.TRUST_REMOTE_CODE,
             token=hf_token,
             cache_dir=settings.MODEL_CACHE_DIR
         )
@@ -19,7 +19,7 @@ class TextGenerationModel(BaseInferenceModel):
             self.model_path,
             device_map=self.device if self.device != "cpu" else None,
             torch_dtype="auto",
-            trust_remote_code=True,
+            trust_remote_code=settings.TRUST_REMOTE_CODE,
             token=hf_token,
             cache_dir=settings.MODEL_CACHE_DIR
         )

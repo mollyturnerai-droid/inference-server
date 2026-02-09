@@ -22,7 +22,9 @@ async def serve_file(file_path: str):
     full_path = (storage_path / file_path).resolve()
 
     # Security: Ensure path doesn't escape storage directory
-    if not str(full_path).startswith(str(storage_path)):
+    try:
+        full_path.relative_to(storage_path)
+    except ValueError:
         raise HTTPException(status_code=403, detail="Access denied")
 
     if not full_path.exists():
@@ -92,8 +94,16 @@ async def upload_file(file: UploadFile = File(...)):
         else:
             ext = ".wav"
 
-    file_path = f"uploads/{uuid4().hex}{ext}"
+    # Enforce upload size limit
+    max_size = settings.MAX_UPLOAD_SIZE_BYTES
     content = await file.read()
+    if len(content) > max_size:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum size is {max_size // (1024 * 1024)} MB.",
+        )
+
+    file_path = f"uploads/{uuid4().hex}{ext}"
     await storage_service.save_file(file_path=file_path, content=content, content_type=content_type)
 
     return {

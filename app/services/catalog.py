@@ -1,6 +1,6 @@
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timezone
 from app.schemas.model import ModelType, ModelSchema
 from app.core.config import settings
 from app.db import SessionLocal, CatalogModelEntry
@@ -676,6 +676,12 @@ def _get_catalog() -> Dict[str, List[CatalogModel]]:
                 for category, models in loaded.items():
                     catalog[str(category)] = models
     except Exception:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "Failed to load catalog from %s, falling back to built-in catalog",
+            path,
+            exc_info=True,
+        )
         catalog = {k: list(v) for k, v in MODEL_CATALOG.items()}
 
     _catalog_cache = catalog
@@ -747,7 +753,7 @@ def upsert_catalog_model(model: CatalogModel) -> CatalogModel:
     db = SessionLocal()
     try:
         row = db.query(CatalogModelEntry).filter(CatalogModelEntry.id == model.id).first()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if not row:
             row = CatalogModelEntry(
                 id=model.id,
@@ -789,7 +795,7 @@ def delete_catalog_model(model_id: str) -> bool:
         if not row:
             return False
         row.is_active = False
-        row.updated_at = datetime.utcnow()
+        row.updated_at = datetime.now(timezone.utc)
         db.commit()
         return True
     finally:
@@ -900,8 +906,8 @@ def refresh_catalog_model_schema(model_id: str) -> CatalogModel:
             row.schema_source = schema_source
             row.schema_version = schema_version
         row.metadata_json = metadata
-        row.last_synced_at = datetime.utcnow()
-        row.updated_at = datetime.utcnow()
+        row.last_synced_at = datetime.now(timezone.utc)
+        row.updated_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(row)
 
@@ -935,7 +941,7 @@ def increment_prediction_count(model_path: str, model_name: Optional[str] = None
         if row is None:
             return False
         row.prediction_count = (row.prediction_count or 0) + 1
-        row.updated_at = datetime.utcnow()
+        row.updated_at = datetime.now(timezone.utc)
         db.commit()
         return True
     finally:

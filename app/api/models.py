@@ -7,6 +7,17 @@ from dataclasses import asdict
 router = APIRouter(prefix="/models", tags=["Models"])
 
 
+def _remove_model(model_id: str, db: Session):
+    """Remove a model and its predictions from the database."""
+    db.query(Prediction).filter(Prediction.model_id == model_id).delete(
+        synchronize_session=False
+    )
+    db.query(Model).filter(Model.id == model_id).delete(
+        synchronize_session=False
+    )
+    db.commit()
+
+
 @router.post("/", response_model=ModelResponse)
 async def create_model(
     model: ModelCreate,
@@ -61,19 +72,12 @@ async def delete_model(
     model_id: str,
     db: Session = Depends(get_db)
 ):
-    """Delete a model"""
+    """Delete a model and its predictions"""
     exists = db.query(Model.id).filter(Model.id == model_id).first()
     if not exists:
         raise HTTPException(status_code=404, detail="Model not found")
 
-    db.query(Prediction).filter(Prediction.model_id == model_id).delete(
-        synchronize_session=False
-    )
-    db.query(Model).filter(Model.id == model_id).delete(
-        synchronize_session=False
-    )
-    db.commit()
-
+    _remove_model(model_id, db)
     return {"message": "Model deleted successfully"}
 
 
@@ -87,14 +91,7 @@ async def unmount_model(
     if not exists:
         raise HTTPException(status_code=404, detail="Model not found")
 
-    db.query(Prediction).filter(Prediction.model_id == model_id).delete(
-        synchronize_session=False
-    )
-    db.query(Model).filter(Model.id == model_id).delete(
-        synchronize_session=False
-    )
-    db.commit()
-
+    _remove_model(model_id, db)
     return {"message": "Model unmounted successfully"}
 
 
@@ -110,24 +107,24 @@ async def load_model_from_hub(
     from app.services.model_resolver import model_resolver
     from app.services.model_downloader import model_downloader
     from app.services.model_registry import model_registry
-    
+
     repo_id = request.repo_id
-    
+
     # 1. Check registry first
     local_path = model_registry.get_model_path(repo_id)
-    
+
     if local_path is None or not local_path.exists() or request.force_redownload:
         # 2. Analyze model requirements
         try:
             metadata = model_resolver.analyze_model(repo_id)
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Failed to analyze model {repo_id}: {str(e)}")
-            
+
         # 3. Determine best download method and execute
         try:
             preferred_method = model_registry.get_best_method(repo_id)
             local_path = model_downloader.download(metadata, method=preferred_method)
-            
+
             # 4. Register in Model Registry (SQLite)
             model_registry.register_model(
                 repo_id=repo_id,
@@ -170,5 +167,5 @@ async def load_model_from_hub(
         db.add(db_model)
         db.commit()
         db.refresh(db_model)
-        
+
     return db_model

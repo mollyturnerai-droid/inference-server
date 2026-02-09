@@ -1,7 +1,7 @@
 from sqlalchemy import Column, String, DateTime, JSON, Boolean, ForeignKey, Enum as SQLEnum, Float, Integer
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 from app.schemas import PredictionStatus, ModelType
 
@@ -12,6 +12,10 @@ def generate_uuid():
     return str(uuid.uuid4())
 
 
+def _utcnow():
+    return datetime.now(timezone.utc)
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -20,8 +24,8 @@ class User(Base):
     email = Column(String, unique=True, nullable=False, index=True)
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     models = relationship("Model", back_populates="owner")
     predictions = relationship("Prediction", back_populates="user")
@@ -36,10 +40,10 @@ class Model(Base):
     model_type = Column(SQLEnum(ModelType), nullable=False)
     version = Column(String, default="1.0.0")
     model_path = Column(String, nullable=False)
-    input_schema = Column(JSON, default={})
+    input_schema = Column(JSON, default=dict)
     hardware = Column(String, default="cpu")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
     owner_id = Column(String, ForeignKey("users.id"), nullable=True)
 
     owner = relationship("User", back_populates="models")
@@ -61,7 +65,7 @@ class Prediction(Base):
     progress = Column(Float, nullable=True)
     progress_step = Column(Integer, nullable=True)
     progress_total = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=_utcnow, index=True)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
 
@@ -78,7 +82,7 @@ class ApiKey(Base):
     key_hash = Column(String, nullable=False, unique=True, index=True)
     is_active = Column(Boolean, default=True)
     is_admin = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
     last_used_at = Column(DateTime, nullable=True)
 
 
@@ -105,6 +109,6 @@ class CatalogModelEntry(Base):
     metadata_json = Column(JSON, default=dict)
     prediction_count = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
     last_synced_at = Column(DateTime, nullable=True)
