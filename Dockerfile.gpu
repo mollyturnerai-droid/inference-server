@@ -29,10 +29,10 @@ RUN ln -sf /usr/bin/python3.11 /usr/bin/python && \
 RUN python3.11 -m pip install --no-cache-dir --upgrade pip
 
 # Copy requirements
-COPY requirements.txt .
+COPY requirements.gpu.txt .
 
 # Install Python dependencies with Python 3.11
-RUN python3.11 -m pip install --no-cache-dir -r requirements.txt && \
+RUN python3.11 -m pip install --no-cache-dir -r requirements.gpu.txt && \
     python3.11 -m pip install --no-cache-dir --no-deps chatterbox-tts
 
 # Copy application code

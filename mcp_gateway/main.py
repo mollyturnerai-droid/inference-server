@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import hmac
 import os
 from typing import Any, Dict, Optional
 
@@ -32,7 +33,7 @@ async def require_api_key(request: Request, call_next):
             auth = request.headers.get("authorization")
             if auth and auth.lower().startswith("bearer "):
                 key = auth.split(" ", 1)[1].strip()
-        if not key:
+        if not key or not hmac.compare_digest(key, API_KEY):
             return JSONResponse({"detail": "Unauthorized"}, status_code=401)
     return await call_next(request)
 

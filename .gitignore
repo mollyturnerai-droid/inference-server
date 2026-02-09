@@ -34,6 +34,7 @@ wheels/
 .idea/
 .vite/
 .windsurf/
+.claude/settings.local.json
 *.swp
 *.swo
 *~

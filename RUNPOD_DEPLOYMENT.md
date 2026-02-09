@@ -197,7 +197,7 @@ git clone https://github.com/mollyturnerai-droid/inference-server.git
 cd inference-server
 
 # Install Python dependencies
-pip install -r requirements.txt
+pip install -r requirements.gpu.txt
 ```
 
 ### Step 3: Setup Services

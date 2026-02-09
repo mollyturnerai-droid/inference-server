@@ -21,7 +21,7 @@ def _require_api_key(app, expected_key: str):
             qs = parse_qs((scope.get("query_string") or b"").decode())
             key = (qs.get("api_key") or [None])[0]
 
-        if not key:
+        if not key or key != expected_key:
             res = JSONResponse({"detail": "Unauthorized"}, status_code=401)
             await res(scope, receive, send)
             return
@@ -52,7 +52,7 @@ def create_sse_server(mcp: FastMCP) -> Starlette:
     if expected_key:
         async def handle_sse_authed(request):
             key = request.headers.get("x-api-key") or request.query_params.get("api_key")
-            if not key:
+            if not key or key != expected_key:
                 return JSONResponse({"detail": "Unauthorized"}, status_code=401)
             return await handle_sse(request)
         sse_endpoint = handle_sse_authed

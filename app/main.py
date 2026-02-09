@@ -7,10 +7,10 @@ from slowapi.errors import RateLimitExceeded
 from app.api import api_router
 from app.db import engine, Base, SessionLocal, ApiKey
 from app.core.config import settings
-from app.services.auth import get_current_api_key
+from app.services.auth import get_current_api_key, extract_api_key, authenticate_api_key
 from app.services.recon import start_recon_scheduler
 from sqlalchemy.engine.url import make_url
-import requests
+import httpx
 
 # Create database tables (only if database is available)
 try:
@@ -92,32 +92,15 @@ async def require_api_key(request: Request, call_next):
     if path in public_paths or path.startswith("/v1/files/"):
         return await call_next(request)
 
-    raw = request.headers.get("x-api-key")
-    if not raw:
-        auth = request.headers.get("authorization")
-        if auth and auth.lower().startswith("bearer "):
-            raw = auth.split(" ", 1)[1].strip()
-
+    raw = extract_api_key(request)
     if not raw:
         return JSONResponse({"detail": "Unauthorized"}, status_code=401)
 
-    if settings.API_KEY and raw == settings.API_KEY:
-        return await call_next(request)
-
-    import hashlib
-
-    key_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     db = SessionLocal()
     try:
-        row = db.query(ApiKey).filter(ApiKey.key_hash == key_hash).first()
-        if not row or not row.is_active:
+        principal = authenticate_api_key(raw, db)
+        if principal is None:
             return JSONResponse({"detail": "Unauthorized"}, status_code=401)
-        try:
-            from datetime import datetime
-            row.last_used_at = datetime.utcnow()
-            db.commit()
-        except Exception:
-            db.rollback()
     finally:
         db.close()
 
@@ -289,11 +272,11 @@ async def hf_status(principal=Depends(get_current_api_key)):
         return {"token_present": False, "authenticated": False}
 
     try:
-        resp = requests.get(
-            "https://huggingface.co/api/whoami-v2",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10,
-        )
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                "https://huggingface.co/api/whoami-v2",
+                headers={"Authorization": f"Bearer {token}"},
+            )
         if resp.status_code != 200:
             return {
                 "token_present": True,

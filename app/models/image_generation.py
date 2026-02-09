@@ -14,10 +14,9 @@ import io
 import uuid
 from PIL import Image
 from app.services.storage import storage_service
-from urllib.parse import urlparse
-import requests
 from app.core.config import settings
 import inspect
+from app.models.image_io import load_image_rgb
 
 
 class ImageGenerationModel(BaseInferenceModel):
@@ -194,27 +193,12 @@ class ImageGenerationModel(BaseInferenceModel):
         return self.pipeline_img2img
 
     def _load_image(self, image_input: str) -> Image.Image:
-        parsed = urlparse(image_input)
-        if not parsed.scheme:
-            path = os.path.join(settings.STORAGE_PATH, image_input)
-            return Image.open(path).convert("RGB")
-        if parsed.scheme == "file":
-            return Image.open(parsed.path).convert("RGB")
-        if image_input.startswith("/v1/files/"):
-            rel = image_input[len("/v1/files/"):]
-            path = os.path.join(settings.STORAGE_PATH, rel)
-            return Image.open(path).convert("RGB")
-        api_base = (settings.API_BASE_URL or "").rstrip("/")
-        api_files_prefix = f"{api_base}/v1/files/" if api_base else ""
-        if api_files_prefix and image_input.startswith(api_files_prefix):
-            rel = image_input[len(api_files_prefix):]
-            path = os.path.join(settings.STORAGE_PATH, rel)
-            return Image.open(path).convert("RGB")
-        if parsed.scheme in ("http", "https"):
-            resp = requests.get(image_input, stream=True, timeout=30)
-            resp.raise_for_status()
-            return Image.open(resp.raw).convert("RGB")
-        raise ValueError("Unsupported image input")
+        return load_image_rgb(
+            image_input,
+            storage_path=settings.STORAGE_PATH,
+            api_base_url=settings.API_BASE_URL,
+            timeout_s=30.0,
+        )
 
     def _apply_vram_limits(self, width: int, height: int, steps: int):
         if self.device != "cuda" or not torch.cuda.is_available():

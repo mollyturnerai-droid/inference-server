@@ -2,6 +2,7 @@ import os
 import aiofiles
 from typing import BinaryIO, Optional
 from pathlib import Path
+import asyncio
 from app.core.config import settings
 
 
@@ -37,11 +38,13 @@ class StorageService:
 
             return file_path
         elif self.storage_type == "s3":
-            self.s3_client.put_object(
+            # boto3 is sync; keep async endpoints non-blocking.
+            await asyncio.to_thread(
+                self.s3_client.put_object,
                 Bucket=settings.S3_BUCKET,
                 Key=file_path,
                 Body=content,
-                ContentType=content_type
+                ContentType=content_type,
             )
             return file_path
         else:
@@ -75,13 +78,26 @@ class StorageService:
             async with aiofiles.open(full_path, "rb") as f:
                 return await f.read()
         elif self.storage_type == "s3":
-            response = self.s3_client.get_object(
+            response = await asyncio.to_thread(
+                self.s3_client.get_object,
                 Bucket=settings.S3_BUCKET,
-                Key=file_path
+                Key=file_path,
             )
-            return response['Body'].read()
+            return await asyncio.to_thread(response["Body"].read)
         else:
             raise ValueError(f"Unknown storage type: {self.storage_type}")
+
+    def save_image(self, image, file_path: str, *, format: str = "PNG") -> str:
+        """Persist a PIL image via the configured storage backend (sync).
+
+        Used by inference models running in Celery workers.
+        """
+        import io
+
+        buf = io.BytesIO()
+        image.save(buf, format=format)
+        content_type = "image/png" if format.upper() == "PNG" else "application/octet-stream"
+        return self.save_file_sync(file_path=file_path, content=buf.getvalue(), content_type=content_type)
 
     def get_url(self, file_path: str) -> str:
         """Get internal URL (file:// or s3://) - for backward compatibility"""

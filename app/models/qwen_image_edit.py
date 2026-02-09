@@ -1,12 +1,11 @@
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional
 import os
 import torch
 from PIL import Image
 from .base_model import BaseInferenceModel
 from app.services.storage import storage_service
-from urllib.parse import urlparse
-import requests
 from app.core.config import settings
+from app.models.image_io import load_image_rgb
 
 # Attempt to import the specific pipeline. If it fails (old diffusers), we'll handle gracefully.
 try:
@@ -43,40 +42,18 @@ class QwenImageEditModel(BaseInferenceModel):
     def _load_image(self, image_input: str) -> Image.Image:
         if not image_input:
             return None
-            
-        parsed = urlparse(image_input)
-        if not parsed.scheme:
-            # Check if it's a local file relative to storage
-            path = os.path.join(settings.STORAGE_PATH, image_input)
-            if os.path.exists(path):
-                return Image.open(path).convert("RGB")
-            # Or absolute path
-            if os.path.exists(image_input):
-                 return Image.open(image_input).convert("RGB")
-        
-        if parsed.scheme == "file":
-            return Image.open(parsed.path).convert("RGB")
-            
-        if image_input.startswith("/v1/files/"):
-            rel = image_input[len("/v1/files/"):]
-            path = os.path.join(settings.STORAGE_PATH, rel)
-            return Image.open(path).convert("RGB")
-            
-        if parsed.scheme in ("http", "https"):
-            resp = requests.get(image_input, stream=True, timeout=30)
-            resp.raise_for_status()
-            return Image.open(resp.raw).convert("RGB")
-            
-        raise ValueError(f"Unsupported image input: {image_input}")
+        return load_image_rgb(
+            image_input,
+            storage_path=settings.STORAGE_PATH,
+            api_base_url=settings.API_BASE_URL,
+            timeout_s=30.0,
+        )
 
     def predict(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """ Run the image editing inference """
         prompt = inputs.get("prompt", "")
         image_input = inputs.get("image")
-        
-        # Support multiple images if provided as a list
-        reference_images = inputs.get("reference_images")
-        
+
         input_image = self._load_image(image_input)
         
         # Prepare pipeline arguments
@@ -102,11 +79,11 @@ class QwenImageEditModel(BaseInferenceModel):
         
         # Save output image
         output_id = f"qwen-{os.urandom(4).hex()}"
-        filename = f"{output_id}.png"
+        filename = f"images/{output_id}.png"
         
         storage_service.save_image(output_image, filename)
         
         return {
-            "image_url": f"/v1/files/{filename}",
+            "image_url": storage_service.get_public_url(filename),
             "status": "succeeded"
         }

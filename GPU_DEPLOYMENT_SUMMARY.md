@@ -6,7 +6,7 @@ Your inference server is now configured for GPU-accelerated inference on RunPod.
 
 ### 1. GPU-Optimized Files
 - **`Dockerfile.gpu`** - NVIDIA CUDA 11.8 base image
-- **`requirements.txt`** - PyTorch with CUDA support (+cu118)
+- **`requirements.gpu.txt`** - PyTorch with CUDA support (+cu118)
 - **`docker-compose.runpod.yml`** - Full stack with GPU access
 - **`.env.runpod`** - GPU environment configuration
 - **`ENABLE_GPU=true`** - GPU inference enabled
@@ -288,7 +288,7 @@ inference_server/
 ├── Dockerfile.gpu             # GPU Docker image
 ├── docker-compose.runpod.yml  # RunPod stack config
 ├── .env.runpod               # GPU environment template
-├── requirements.txt          # With CUDA PyTorch
+├── requirements.gpu.txt      # With CUDA PyTorch
 └── README.md                 # General project docs
 ```
 
