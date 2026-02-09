@@ -49,6 +49,11 @@ app = FastAPI(
     version="1.0.0"
 )
 
+app.state.mcp = {
+    "enabled": bool(getattr(settings, "ENABLE_MCP", False)),
+    "mounted": False,
+    "error": None,
+}
 
 @app.on_event("startup")
 def _start_recon():
@@ -245,6 +250,7 @@ async def system_status(principal=Depends(get_current_api_key)):
             "git_sha": settings.BUILD_GIT_SHA,
             "image_tag": settings.BUILD_IMAGE_TAG,
         },
+        "mcp": getattr(app.state, "mcp", {"enabled": False, "mounted": False, "error": None}),
         "model_loader": {
             "max_loaded_models": settings.MAX_LOADED_MODELS,
             "idle_ttl_seconds": settings.MODEL_IDLE_TTL_SECONDS,
@@ -315,6 +321,7 @@ if settings.ENABLE_MCP:
 
         mcp = FastMCP("InferenceServer")
         app.mount("/mcp", create_sse_server(mcp))
+        app.state.mcp["mounted"] = True
 
         def _coerce_json(value: Any) -> Any:
             if value is None:
@@ -388,6 +395,7 @@ if settings.ENABLE_MCP:
 
     except Exception as _exc:
         # Don't fail the API if MCP isn't available in a given environment.
+        app.state.mcp["error"] = str(_exc)
         print(f"Warning: MCP server disabled due to import/runtime error: {_exc}")
 
 
