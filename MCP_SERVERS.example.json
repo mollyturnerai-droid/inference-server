@@ -3,9 +3,8 @@
     "inference_server_runpod": {
       "serverUrl": "https://uak5zag3luyerk-8000.proxy.runpod.net/mcp/sse/",
       "headers": {
-        "X-API-Key": "${env:INFERENCE_API_KEY}"
+        "X-API-Key": "${env:RUNPOD_API_KEY}"
       }
     }
   }
 }
-
