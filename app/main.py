@@ -3,8 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.api import api_router
 from app.db import engine, Base, SessionLocal, ApiKey
@@ -63,19 +62,7 @@ def _check_gpu_status():
         return f"unavailable: {str(e)[:100]}"
 
 
-def _get_client_ip(request: Request) -> str:
-    if settings.TRUST_PROXY_HEADERS:
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        real_ip = request.headers.get("x-real-ip")
-        if real_ip:
-            return real_ip.strip()
-    return get_remote_address(request)
-
-
-# Initialize rate limiter
-limiter = Limiter(key_func=_get_client_ip)
+from app.core.rate_limit import limiter
 
 
 @asynccontextmanager

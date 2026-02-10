@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from typing import Optional
+from app.core.rate_limit import limiter
 from app.db import get_db, Prediction, Model
 from app.schemas import PredictionInput, PredictionResponse, PredictionList, PredictionStatus
 from app.workers.tasks import run_inference
@@ -9,14 +10,13 @@ router = APIRouter(prefix="/predictions", tags=["Predictions"])
 
 
 @router.post("/", response_model=PredictionResponse)
+@limiter.limit("10/minute")
 async def create_prediction(
     request: Request,
     prediction: PredictionInput,
     db: Session = Depends(get_db),
 ):
     """Create a new prediction"""
-    # Rate limit: 10 predictions per minute per client
-    request.app.state.limiter.limit("10/minute")(lambda: None)()
 
     # Verify model exists
     model = db.query(Model).filter(Model.id == prediction.model_id).first()
