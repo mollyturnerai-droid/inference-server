@@ -1,0 +1,28 @@
+# Lightweight dependency set for CI testing.
+# Excludes heavy ML packages (torch, transformers, diffusers, etc.) that are
+# not needed for API-level tests and would cause CI to timeout.
+
+fastapi>=0.115.6
+uvicorn[standard]>=0.31.1
+pydantic>=2.11.0,<3
+pydantic-settings>=2.5.2
+email-validator==2.1.0
+redis==5.0.1
+celery==5.3.6
+pillow==10.2.0
+numpy==1.25.2
+requests==2.31.0
+python-multipart>=0.0.9
+aiofiles==23.2.1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==3.2.2
+slowapi==0.1.9
+sqlalchemy==2.0.25
+alembic==1.13.1
+psycopg2-binary==2.9.9
+boto3==1.34.34
+python-dotenv==1.0.0
+httpx>=0.27.1
+mcp==1.26.0
+safetensors==0.5.3

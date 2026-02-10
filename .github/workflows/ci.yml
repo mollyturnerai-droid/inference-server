@@ -14,7 +14,7 @@ jobs:
   python-tests:
     name: Python Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -29,7 +29,7 @@ jobs:
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pytest
+          python -m pip install -r requirements-ci.txt pytest
 
       - name: Sanity (compile)
         run: |
@@ -47,4 +47,3 @@ jobs:
       - name: Pip check
         run: |
           python -m pip check
-
