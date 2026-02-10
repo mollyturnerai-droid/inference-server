@@ -23,6 +23,11 @@ import torch
 
 logger = logging.getLogger(__name__)
 
+def _is_cuda_oom(exc: BaseException) -> bool:
+    # Torch throws a RuntimeError with this substring for CUDA OOM in many cases.
+    msg = str(exc).lower()
+    return "cuda out of memory" in msg or "cublas" in msg and "alloc" in msg
+
 
 def _utcnow():
     return datetime.now(timezone.utc)
@@ -92,11 +97,52 @@ def run_inference(self, prediction_id: str, model_id: str, model_type: str, mode
             except Exception:
                 db.rollback()
 
-        output = model.predict(
-            input_data,
-            progress_callback=_progress_callback if progress_total else None,
-            callback_steps=1,
-        )
+        try:
+            output = model.predict(
+                input_data,
+                progress_callback=_progress_callback if progress_total else None,
+                callback_steps=1,
+            )
+        except Exception as e:
+            # Best-effort retry path for low-VRAM GPUs: fall back to CPU on CUDA OOM.
+            # This keeps the API usable on small cards (e.g. 4GB) at the cost of latency.
+            torch_oom = getattr(torch, "OutOfMemoryError", ())
+            is_oom = _is_cuda_oom(e) or (torch_oom and isinstance(e, torch_oom))
+
+            if is_oom and getattr(model, "device", None) == "cuda":
+                logger.warning(
+                    "CUDA OOM during inference; retrying on CPU",
+                    extra={
+                        "prediction_id": prediction_id,
+                        "model_id": model_id,
+                        "model_path": model_path,
+                        "hardware": hardware,
+                        "gpu": gpu_name,
+                        "error": str(e)[:200],
+                    },
+                )
+                try:
+                    model_loader.unload_model(model_id)
+                except Exception:
+                    pass
+                try:
+                    torch.cuda.empty_cache()
+                except Exception:
+                    pass
+
+                model = model_loader.load_model(
+                    model_id=model_id,
+                    model_type=model_type,
+                    model_path=model_path,
+                    hardware="cpu",
+                )
+                output = model.predict(
+                    input_data,
+                    progress_callback=_progress_callback if progress_total else None,
+                    callback_steps=1,
+                )
+            else:
+                raise
 
         # Update prediction with results
         prediction.status = PredictionStatus.SUCCEEDED

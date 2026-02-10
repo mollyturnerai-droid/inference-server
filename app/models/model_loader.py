@@ -136,7 +136,26 @@ class ModelLoader:
 
         logger.info(f"Loading model {model_id} using {model_class.__name__} on {device}")
         model = model_class(model_path=model_path, device=device)
-        model.load()
+        try:
+            model.load()
+        except Exception as e:
+            # If auto-selected CUDA runs out of memory during load, fall back to CPU.
+            # This is intentionally conservative: if user forced GPU, don't override.
+            msg = str(e).lower()
+            is_cuda_oom = "cuda out of memory" in msg
+            if is_cuda_oom and device == "cuda" and hardware == "auto":
+                logger.warning(
+                    f"CUDA OOM while loading {model_id}; retrying on CPU: {str(e)[:200]}"
+                )
+                try:
+                    import torch
+                    torch.cuda.empty_cache()
+                except Exception:
+                    pass
+                model = model_class(model_path=model_path, device="cpu")
+                model.load()
+            else:
+                raise
 
         self.loaded_models[model_id] = model
         self._touch(model_id)

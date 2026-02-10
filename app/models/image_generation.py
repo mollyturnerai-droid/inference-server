@@ -132,11 +132,29 @@ class ImageGenerationModel(BaseInferenceModel):
         
         # Silence diffusers tqdm progress output; we report progress via callbacks.
         self.pipeline_txt2img.set_progress_bar_config(disable=True)
-        self.pipeline_txt2img = self.pipeline_txt2img.to(self.device)
+        if self.device == "cuda":
+            # On low-VRAM GPUs, prefer CPU offload to avoid OOM during inference.
+            try:
+                free_bytes, _total_bytes = torch.cuda.mem_get_info()
+                free_gb = free_bytes / (1024 ** 3)
+            except Exception:
+                free_gb = None
+
+            if free_gb is not None and free_gb < 6.0 and hasattr(self.pipeline_txt2img, "enable_model_cpu_offload"):
+                self.pipeline_txt2img.enable_model_cpu_offload()
+            else:
+                self.pipeline_txt2img = self.pipeline_txt2img.to(self.device)
+        else:
+            self.pipeline_txt2img = self.pipeline_txt2img.to(self.device)
         self.model = self.pipeline_txt2img
 
         if self.device == "cuda":
             self.pipeline_txt2img.enable_attention_slicing()
+            # Extra memory savers (no-op if not supported).
+            try:
+                self.pipeline_txt2img.enable_vae_slicing()
+            except Exception:
+                pass
         
         logger.info(f"Successfully loaded {pipeline_cls.__name__} on {self.device}")
 
@@ -190,9 +208,25 @@ class ImageGenerationModel(BaseInferenceModel):
         
         # Silence diffusers tqdm progress output; we report progress via callbacks.
         self.pipeline_img2img.set_progress_bar_config(disable=True)
-        self.pipeline_img2img = self.pipeline_img2img.to(self.device)
+        if self.device == "cuda":
+            try:
+                free_bytes, _total_bytes = torch.cuda.mem_get_info()
+                free_gb = free_bytes / (1024 ** 3)
+            except Exception:
+                free_gb = None
+
+            if free_gb is not None and free_gb < 6.0 and hasattr(self.pipeline_img2img, "enable_model_cpu_offload"):
+                self.pipeline_img2img.enable_model_cpu_offload()
+            else:
+                self.pipeline_img2img = self.pipeline_img2img.to(self.device)
+        else:
+            self.pipeline_img2img = self.pipeline_img2img.to(self.device)
         if self.device == "cuda":
             self.pipeline_img2img.enable_attention_slicing()
+            try:
+                self.pipeline_img2img.enable_vae_slicing()
+            except Exception:
+                pass
         
         logger.info(f"Successfully loaded {pipeline_cls.__name__} on {self.device}")
         return self.pipeline_img2img
